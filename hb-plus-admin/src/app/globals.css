@@ -1,0 +1,117 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* HB+ Premium Palette */
+  --hb-beige: #ede0d0;
+  --hb-cream: #f5f2e9;
+  --hb-burnt-orange: #9f4022;
+  --hb-terracotta: #a9674d;
+  --hb-brown: #53372b;
+  --hb-gray: #c6c6c6;
+  --hb-sage: #6f8e7c;
+  --hb-gold: #c99d5d;
+  --hb-sunset: #d27440;
+
+  --background: var(--hb-beige);
+  --foreground: var(--hb-brown);
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  font-family: 'Outfit', 'Gilroy', sans-serif;
+  margin: 0;
+  padding: 0;
+}
+
+/* Base Styles */
+h1, h2, h3, h4, .font-editorial {
+  font-family: 'Bodoni Moda', serif;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* Premium Card */
+.premium-card {
+  background: var(--hb-cream);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 4px 20px rgba(83, 55, 43, 0.05);
+  border: 1px solid rgba(198, 198, 198, 0.2);
+  transition: all 0.4s ease;
+}
+
+.premium-card:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 12px 30px rgba(83, 55, 43, 0.1);
+}
+
+/* Responsive Grid Utility */
+.responsive-grid {
+  display: grid;
+  grid-template-columns: repeat(1, 1fr);
+  gap: 24px;
+}
+
+@media (min-width: 768px) {
+  .responsive-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .responsive-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+
+/* Navigation Pill */
+.nav-pill {
+  padding: 12px 24px;
+  border-radius: 9999px;
+  font-weight: 600;
+  font-size: 14px;
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+/* Background Logic */
+.blob {
+  position: absolute;
+  z-index: -1;
+  opacity: 0.1;
+  pointer-events: none;
+  border-radius: 50%;
+  filter: blur(80px);
+}
+
+/* Animations */
+@keyframes float {
+  0% { transform: translate(0, 0) rotate(0deg); }
+  50% { transform: translate(20px, -20px) rotate(5deg); }
+  100% { transform: translate(0, 0) rotate(0deg); }
+}
+
+.animate-float {
+  animation: float 20s infinite ease-in-out;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--hb-cream);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--hb-terracotta);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--hb-burnt-orange);
+}
