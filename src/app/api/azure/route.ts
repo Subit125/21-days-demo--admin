@@ -50,6 +50,18 @@ export async function GET(request: Request) {
       throw tableError;
     }
     
+    if (table === 'Submissions') {
+      const enrichedEntities = entities.map(entity => {
+        if (entity.file_url && typeof entity.file_url === 'string' && !entity.file_url.includes('?')) {
+          if (entity.file_url.includes('blob.core.windows.net')) {
+            entity.file_url = `${entity.file_url}?${sasToken}`;
+          }
+        }
+        return entity;
+      });
+      return corsResponse(enrichedEntities);
+    }
+    
     return corsResponse(entities);
   } catch (error: any) {
     console.error(`Error fetching table ${table}:`, error);
