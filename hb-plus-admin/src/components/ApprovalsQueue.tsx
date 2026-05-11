@@ -202,7 +202,7 @@ export function ApprovalsQueue({ batchId }: { batchId?: string }) {
                        {sub.profiles?.team_name || 'No Clan'}
                     </p>
                  </div>
-                 <div style={{ fontSize: '10px', color: 'rgba(0,0,0,0.3)', fontWeight: 'bold' }}>{new Date(sub.created_at).toLocaleTimeString()}</div>
+                 <div style={{ fontSize: '10px', color: 'rgba(0,0,0,0.3)', fontWeight: 'bold' }}>{new Date(sub.created_at || (sub as any).Timestamp || Date.now()).toLocaleTimeString()}</div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {retryStates[sub.id] !== undefined ? (
