@@ -92,16 +92,44 @@ export function TaskManagement({ batchId, user, isLocked }: { batchId?: string, 
         getAllEntities(TABLES.SUBMISSIONS),
       ]);
 
-      const filteredTasks = (batchId ? (allTasks||[]).filter((t: any) => t.batch_id === batchId) : (allTasks||[]))
-        .map((t: any) => ({ ...t, id: t.rowKey || t.RowKey }));
-      const filteredCards = (allFlashcards||[]).filter((f: any) => f.partitionKey === 'Flashcard' || f.PartitionKey === 'Flashcard')
+      // Normalize and deduplicate tasks
+      const seenIds = new Set();
+      const filteredTasks = (allTasks || [])
+        .filter((t: any) => {
+          const tBatchId = t.batch_id || t.BatchId;
+          // Strict filter: only show tasks belonging to this batch
+          if (batchId && tBatchId !== batchId) return false;
+          // If no batchId provided, show all (for global view)
+          return true;
+        })
+        .map((t: any) => {
+          const id = t.rowKey || t.RowKey || t.id;
+          return {
+            ...t,
+            id: id,
+            rowKey: id, // Ensure internal consistency
+            day: Number(t.day || t.Day || 1),
+            week: Number(t.week || t.Week || 1),
+            title: t.title || t.Title || "Untitled Protocol",
+            points: Number(t.points || t.Points || 0),
+            batch_id: t.batch_id || t.BatchId
+          };
+        })
+        .filter((t: any) => {
+          if (seenIds.has(t.id)) return false;
+          seenIds.add(t.id);
+          return true;
+        });
+
+      const filteredCards = (allFlashcards || [])
+        .filter((f: any) => f.partitionKey === 'Flashcard' || f.PartitionKey === 'Flashcard')
         .map((f: any) => ({ ...f, id: f.rowKey || f.RowKey }));
 
       setTasks(filteredTasks);
       setFlashCards(filteredCards);
       setSubmissions(allSubmissions || []);
       setProfiles(allProfiles || []);
-      setMembers((allProfiles||[]).map((p: any) => ({ id: p.rowKey || p.RowKey, name: p.name })));
+      setMembers((allProfiles || []).map((p: any) => ({ id: p.rowKey || p.RowKey, name: p.name })));
     } catch (err) {
       console.error('TaskManagement fetchData error:', err);
     } finally {
@@ -272,11 +300,16 @@ export function TaskManagement({ batchId, user, isLocked }: { batchId?: string, 
     }
 
     try {
-        const existingTask = tasks.find(t => t.day === activeDay && t.title.toLowerCase() === newTaskData.title.toLowerCase());
+        // Deterministic RowKey: batchId_day_index OR batchId_day_titleHash
+        // This ensures that even if title changes, we don't accidentally create ghost duplicates 
+        // if we intended to just have one primary task per day.
         
+        const generatedId = `task_${batchId}_d${activeDay}_${newTaskData.title.toLowerCase().replace(/\s+/g, '_').substring(0, 20)}`;
+        const rowKey = editingTaskId || generatedId;
+
         const taskPayload = {
             partitionKey: 'Task',
-            rowKey: editingTaskId || (existingTask ? (existingTask.rowKey || existingTask.id) : crypto.randomUUID()),
+            rowKey: rowKey,
             title: newTaskData.title,
             description: newTaskData.description,
             points: newTaskData.points,
@@ -291,12 +324,15 @@ export function TaskManagement({ batchId, user, isLocked }: { batchId?: string, 
 
         await upsertEntity(TABLES.TASKS, taskPayload);
         
+        // If we were editing and the ID changed (because title changed), we should delete the old one
+        // but since we usually want to preserve edits, we'll stick to the editingTaskId if it exists.
+        
         setNewTaskData({ title: '', description: '', points: 15, video_url: null, proof_type: 'image', proof_mode: 'both', live_time: '00:00' });
         setTaskFile(null);
         setEditingTaskId(null);
         setIsAddingTask(false);
         fetchData();
-        alert(editingTaskId || existingTask ? "Task updated successfully!" : "Task added successfully!");
+        alert("Protocol synchronized successfully!");
     } catch (e: any) {
         console.error("Save Task Error:", e);
         alert(`Failed to save task: ${e.message}`);
