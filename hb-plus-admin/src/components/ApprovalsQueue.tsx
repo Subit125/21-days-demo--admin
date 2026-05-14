@@ -26,6 +26,8 @@ export function ApprovalsQueue({ batchId }: { batchId?: string }) {
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [retryStates, setRetryStates] = useState<{ [id: string]: string }>({});
+  const [shoutoutStates, setShoutoutStates] = useState<{ [id: string]: string }>({});
+  const [featuredIds, setFeaturedIds] = useState<Set<string>>(new Set());
   const [totals, setTotals] = useState({ approved: 0, retry: 0, rejected: 0 });
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
@@ -101,6 +103,8 @@ export function ApprovalsQueue({ batchId }: { batchId?: string }) {
 
         const cleanSub = toCleanSub(sub);
         const consentedToFeed = sub.consent_to_feed === true || (sub as any).consent_to_feed === 'true';
+        const shoutout = shoutoutStates[subId] || null;
+        const featured = featuredIds.has(subId);
 
         await upsertEntity(TABLES.SUBMISSIONS, {
             ...cleanSub,
@@ -108,6 +112,10 @@ export function ApprovalsQueue({ batchId }: { batchId?: string }) {
             rejection_comment: comment || null,
             approved_by: adminEmail,
             processed_at: new Date().toISOString(),
+            ...(status === 'approved' ? {
+                admin_shoutout: shoutout,
+                is_featured: featured,
+            } : {}),
             ...(status === 'approved' && consentedToFeed ? {
                 published_to_feed: true,
                 feed_published_at: new Date().toISOString()
@@ -134,6 +142,8 @@ export function ApprovalsQueue({ batchId }: { batchId?: string }) {
         }
 
         setRetryStates(prev => { const n = { ...prev }; delete n[subId]; return n; });
+        setShoutoutStates(prev => { const n = { ...prev }; delete n[subId]; return n; });
+        setFeaturedIds(prev => { const n = new Set(prev); n.delete(subId); return n; });
         fetchSubmissions();
     } catch (e: any) {
         console.error('Approval Error:', e);
@@ -241,19 +251,37 @@ export function ApprovalsQueue({ batchId }: { batchId?: string }) {
                     </div>
                   </div>
                 ) : (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                    <button 
-                      onClick={() => handleStatusUpdate(sub, 'approved')} 
-                      style={{ background: '#9f4022', color: 'white', border: 'none', padding: '10px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
-                    >
-                      ✓ Approve
-                    </button>
-                    <button 
-                      onClick={() => setRetryStates(prev => ({ ...prev, [sub.id]: '' }))}
-                      style={{ background: '#eee', border: 'none', padding: '10px', borderRadius: '8px', fontSize: '11px', cursor: 'pointer', fontWeight: 'bold' }}
-                    >
-                      ↺ Try Again
-                    </button>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <input
+                      type="text"
+                      placeholder="Admin shoutout (optional)..."
+                      value={shoutoutStates[sub.id] || ''}
+                      onChange={(e) => setShoutoutStates(prev => ({ ...prev, [sub.id]: e.target.value }))}
+                      style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid rgba(159, 64, 34, 0.15)', fontSize: '11px', color: '#53372b', outline: 'none', boxSizing: 'border-box' as any, fontFamily: 'inherit' }}
+                    />
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '6px 10px', background: featuredIds.has(sub.id) ? 'rgba(255,215,0,0.08)' : 'rgba(83,55,43,0.03)', borderRadius: '8px', border: `1px solid ${featuredIds.has(sub.id) ? 'rgba(255,215,0,0.35)' : 'rgba(83,55,43,0.08)'}` }}>
+                      <input
+                        type="checkbox"
+                        checked={featuredIds.has(sub.id)}
+                        onChange={(e) => setFeaturedIds(prev => { const n = new Set(prev); e.target.checked ? n.add(sub.id) : n.delete(sub.id); return n; })}
+                        style={{ accentColor: '#d4a017', width: '14px', height: '14px', cursor: 'pointer' }}
+                      />
+                      <span style={{ fontSize: '10px', fontWeight: '800', color: featuredIds.has(sub.id) ? '#856400' : 'rgba(83,55,43,0.4)', textTransform: 'uppercase' as any, letterSpacing: '0.05em' }}>⭐ Feature this post</span>
+                    </label>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                      <button
+                        onClick={() => handleStatusUpdate(sub, 'approved')}
+                        style={{ background: '#9f4022', color: 'white', border: 'none', padding: '10px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
+                      >
+                        ✓ Approve
+                      </button>
+                      <button
+                        onClick={() => setRetryStates(prev => ({ ...prev, [sub.id]: '' }))}
+                        style={{ background: '#eee', border: 'none', padding: '10px', borderRadius: '8px', fontSize: '11px', cursor: 'pointer', fontWeight: 'bold' }}
+                      >
+                        ↺ Try Again
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
