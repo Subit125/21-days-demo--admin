@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ImageIcon, X, Clock } from "lucide-react";
-import { getAllEntities, TABLES } from "@/lib/azureDb";
+import { ImageIcon, X, Clock, Rss } from "lucide-react";
+import { getAllEntities, TABLES, upsertEntity } from "@/lib/azureDb";
 
 const isVideo = (url: string) => /\.(mp4|webm|ogg|mov)$/i.test(url);
 
@@ -20,6 +20,7 @@ interface FeedPost {
 
 export function BatchFeed({ batchId }: { batchId: string }) {
   const [posts, setPosts] = useState<FeedPost[]>([]);
+  const [approvedSubs, setApprovedSubs] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedPost, setSelectedPost] = useState<FeedPost | null>(null);
 
@@ -43,49 +44,53 @@ export function BatchFeed({ batchId }: { batchId: string }) {
         (e: any) => e.partitionKey === "CONFIG_BATCH" || e.PartitionKey === "CONFIG_BATCH"
       );
 
-      const feedPosts = (allSubs || [])
-        .filter(
-          (sub: any) =>
-            sub.status === "approved" &&
-            (sub.published_to_feed === true || sub.published_to_feed === "true")
-        )
-        .map((sub: any) => {
-          const sId = sub.rowKey || sub.RowKey || sub.id;
-          const profile = (allProfiles || []).find(
-            (p: any) => (p.rowKey || p.RowKey || p.id) === sub.user_id
-          );
-
-          if (profile?.batch_id !== batchId) return null;
-
-          const task = (allTasks || []).find(
-            (t: any) => (t.rowKey || t.RowKey || t.id) === sub.task_id
-          );
-          const card = flashData.find(
-            (c: any) => (c.rowKey || c.RowKey || c.id) === sub.flashcard_id
-          );
-          const batch = batches.find(
-            (b: any) => (b.rowKey || b.RowKey || b.id) === profile?.batch_id
-          );
-
-          return {
-            ...sub,
-            id: sId,
-            profiles: profile,
-            tasks: task,
-            flashcards: card,
-            batch_name: batch?.name || "Unknown Batch",
-          };
-        })
-        .filter(Boolean)
-        .sort(
-          (a: any, b: any) =>
-            new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+      const enrich = (sub: any) => {
+        const sId = sub.rowKey || sub.RowKey || sub.id;
+        const profile = (allProfiles || []).find(
+          (p: any) => (p.rowKey || p.RowKey || p.id) === sub.user_id
         );
+        if (profile?.batch_id !== batchId) return null;
+        const task = (allTasks || []).find(
+          (t: any) => (t.rowKey || t.RowKey || t.id) === sub.task_id
+        );
+        const card = flashData.find(
+          (c: any) => (c.rowKey || c.RowKey || c.id) === sub.flashcard_id
+        );
+        const batch = batches.find(
+          (b: any) => (b.rowKey || b.RowKey || b.id) === profile?.batch_id
+        );
+        return { ...sub, id: sId, profiles: profile, tasks: task, flashcards: card, batch_name: batch?.name || "Unknown Batch" };
+      };
 
-      setPosts(feedPosts);
+      const allApproved = (allSubs || [])
+        .filter((sub: any) => sub.status === "approved")
+        .map(enrich)
+        .filter(Boolean);
+
+      setApprovedSubs(allApproved);
+      setPosts(
+        allApproved
+          .filter((sub: any) => sub.published_to_feed === true || sub.published_to_feed === "true")
+          .sort((a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+      );
       setIsLoading(false);
     } catch (err) {
       console.error("BatchFeed fetch error:", err);
+    }
+  };
+
+  const handleToggleFeed = async (sub: any, publish: boolean) => {
+    try {
+      const { profiles, tasks, flashcards, batch_name, id: _id, ...clean } = sub;
+      await upsertEntity(TABLES.SUBMISSIONS, {
+        ...clean,
+        published_to_feed: publish,
+        feed_published_at: publish ? new Date().toISOString() : null,
+      });
+      fetchFeed();
+    } catch (e: any) {
+      console.error("Feed Toggle Error:", e);
+      alert(`Failed to update feed: ${e.message}`);
     }
   };
 
@@ -106,56 +111,104 @@ export function BatchFeed({ batchId }: { batchId: string }) {
     );
   }
 
-  if (posts.length === 0) {
-    return (
-      <div style={{ textAlign: "center", padding: "80px 0", color: "rgba(83, 55, 43, 0.35)" }}>
-        <ImageIcon size={48} style={{ marginBottom: "16px", opacity: 0.25 }} />
-        <p
-          style={{
-            margin: 0,
-            fontSize: "14px",
-            fontWeight: "bold",
-            textTransform: "uppercase",
-            letterSpacing: "0.1em",
-          }}
-        >
-          No posts published yet
-        </p>
-        <p style={{ margin: "8px 0 0", fontSize: "12px", maxWidth: "280px", marginLeft: "auto", marginRight: "auto" }}>
-          Approve submissions in the Approvals tab, then use Feed Curation to publish them here
-        </p>
-      </div>
-    );
-  }
-
   return (
     <div>
+
+      {/* Feed Curation */}
+      {approvedSubs.length > 0 && (
+        <div style={{ marginBottom: "48px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "20px" }}>
+            <Rss size={16} color="#9f4022" />
+            <h3 style={{ margin: 0, fontSize: "13px", fontWeight: "900", color: "#53372b", textTransform: "uppercase", letterSpacing: "0.08em" }}>Feed Curation</h3>
+            <span style={{ fontSize: "11px", color: "rgba(83,55,43,0.4)", fontWeight: "bold" }}>— toggle which approved posts appear in the batch feed</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            {approvedSubs.map((sub: any) => {
+              const isPublished = sub.published_to_feed === true || sub.published_to_feed === "true";
+              const consented = sub.consent_to_feed === true || sub.consent_to_feed === "true";
+              return (
+                <div
+                  key={sub.id}
+                  style={{
+                    display: "flex", alignItems: "center", gap: "14px",
+                    background: "white", borderRadius: "14px", padding: "12px 16px",
+                    border: `1px solid ${isPublished ? "rgba(111,142,124,0.3)" : "rgba(83,55,43,0.08)"}`,
+                  }}
+                >
+                  <div style={{ width: "48px", height: "48px", borderRadius: "10px", overflow: "hidden", background: "rgba(83,55,43,0.06)", flexShrink: 0 }}>
+                    {sub.file_url && !isVideo(sub.file_url) ? (
+                      <img src={sub.file_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    ) : (
+                      <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px" }}>
+                        {sub.file_url ? "🎬" : "📄"}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ margin: 0, fontSize: "13px", fontWeight: "900", color: "#53372b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {sub.profiles?.name}
+                    </p>
+                    <p style={{ margin: "2px 0 0", fontSize: "11px", color: "rgba(83,55,43,0.45)", fontWeight: "bold", textTransform: "uppercase", letterSpacing: "0.04em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {sub.tasks?.title || sub.flashcards?.text || "Submission"} · {sub.profiles?.team_name || "No Clan"}
+                    </p>
+                  </div>
+                  <span style={{
+                    fontSize: "10px", fontWeight: "900", padding: "3px 8px", borderRadius: "6px",
+                    textTransform: "uppercase", letterSpacing: "0.06em", flexShrink: 0,
+                    color: consented ? "#6f8e7c" : "rgba(83,55,43,0.3)",
+                    background: consented ? "rgba(111,142,124,0.1)" : "rgba(83,55,43,0.06)",
+                  }}>
+                    {consented ? "Feed OK" : "Feed No"}
+                  </span>
+                  {isPublished && (
+                    <span style={{ fontSize: "10px", fontWeight: "900", color: "#6f8e7c", background: "rgba(111,142,124,0.1)", padding: "3px 8px", borderRadius: "6px", textTransform: "uppercase", letterSpacing: "0.06em", flexShrink: 0 }}>
+                      Live
+                    </span>
+                  )}
+                  <button
+                    onClick={() => (consented || isPublished) ? handleToggleFeed(sub, !isPublished) : undefined}
+                    disabled={!consented && !isPublished}
+                    title={!consented && !isPublished ? "Client did not consent to feed" : undefined}
+                    style={{
+                      padding: "8px 16px", borderRadius: "8px", border: "none",
+                      fontSize: "11px", fontWeight: "bold", flexShrink: 0,
+                      cursor: (!consented && !isPublished) ? "not-allowed" : "pointer",
+                      opacity: (!consented && !isPublished) ? 0.4 : 1,
+                      background: isPublished ? "rgba(210,116,64,0.1)" : "#9f4022",
+                      color: isPublished ? "#d27440" : "white",
+                    }}
+                  >
+                    {isPublished ? "✕ Remove" : "↑ Publish"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Feed header */}
       <div style={{ marginBottom: "32px" }}>
-        <h2
-          style={{
-            fontFamily: "'Bodoni Moda', serif",
-            fontSize: "24px",
-            color: "#53372b",
-            margin: 0,
-          }}
-        >
+        <h2 style={{ fontFamily: "'Bodoni Moda', serif", fontSize: "24px", color: "#53372b", margin: 0 }}>
           Batch Feed
         </h2>
-        <p
-          style={{
-            margin: "4px 0 0",
-            fontSize: "12px",
-            color: "rgba(83, 55, 43, 0.4)",
-            fontWeight: "bold",
-            textTransform: "uppercase",
-            letterSpacing: "0.05em",
-          }}
-        >
+        <p style={{ margin: "4px 0 0", fontSize: "12px", color: "rgba(83, 55, 43, 0.4)", fontWeight: "bold", textTransform: "uppercase", letterSpacing: "0.05em" }}>
           {posts.length} post{posts.length !== 1 ? "s" : ""} · visible only to this batch
         </p>
       </div>
 
       {/* Instagram-style grid */}
+      {posts.length === 0 && (
+        <div style={{ textAlign: "center", padding: "60px 0", color: "rgba(83, 55, 43, 0.35)" }}>
+          <ImageIcon size={48} style={{ marginBottom: "16px", opacity: 0.25 }} />
+          <p style={{ margin: 0, fontSize: "14px", fontWeight: "bold", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+            No posts published yet
+          </p>
+          <p style={{ margin: "8px 0 0", fontSize: "12px", maxWidth: "280px", marginLeft: "auto", marginRight: "auto" }}>
+            Use Feed Curation above to publish approved posts
+          </p>
+        </div>
+      )}
       <div
         style={{
           display: "grid",
