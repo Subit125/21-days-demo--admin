@@ -3,9 +3,9 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { 
-    Users, Clock, LayoutDashboard, ChevronLeft, 
-    ShieldCheck, RefreshCw, LayoutGrid, FileCheck2, UserCog, Users2, Settings2, BarChart3
+import {
+    Users, Clock, LayoutDashboard, ChevronLeft,
+    ShieldCheck, RefreshCw, LayoutGrid, FileCheck2, UserCog, Users2, Settings2, BarChart3, Rss
 } from "lucide-react";
 import { getAllEntities } from "@/lib/azureDb";
 import { TaskManagement } from "@/components/TaskManagement";
@@ -13,6 +13,7 @@ import { MemberManagement } from "@/components/MemberManagement";
 import { TeamManagement } from "@/components/TeamManagement";
 import { ApprovalsQueue } from "@/components/ApprovalsQueue";
 import { DashboardOverview } from "@/components/DashboardOverview";
+import { BatchFeed } from "@/components/BatchFeed";
 import Link from "next/link";
 
 export default function BatchDetailPage() {
@@ -54,6 +55,7 @@ export default function BatchDetailPage() {
     const tabs = [
         { id: "home", label: "Home", icon: LayoutGrid },
         { id: "approvals", label: "Approvals", icon: FileCheck2 },
+        { id: "feed", label: "Feed", icon: Rss },
         { id: "members", label: "Members", icon: UserCog },
         { id: "teams", label: "Teams", icon: Users2 },
         { id: "tasks", label: "Tasks", icon: Settings2 },
@@ -135,6 +137,10 @@ export default function BatchDetailPage() {
 
                     {activeTab === "approvals" && (
                         <ApprovalsQueue batchId={id as string} />
+                    )}
+
+                    {activeTab === "feed" && (
+                        <BatchFeed batchId={id as string} />
                     )}
 
                     {activeTab === "members" && (
