@@ -10,7 +10,7 @@ export function BatchAssignment() {
   const [activeBatches, setActiveBatches] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
   const [recentlyAssigned, setRecentlyAssigned] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -47,29 +47,34 @@ export function BatchAssignment() {
     }
   };
 
-  const handleAssignBatch = async (userId: string, batchId: string) => {
+  const handleAssignBatch = async (userIds: string[], batchId: string) => {
     try {
-        const user = waitingUsers.find(u => (u.rowKey || u.RowKey || u.id) === userId);
-        if (!user) return;
+        setIsLoading(true);
+        const promises = userIds.map(async (userId) => {
+            const user = waitingUsers.find(u => (u.rowKey || u.RowKey || u.id) === userId);
+            if (!user) return;
 
-        const updatedUser = {
-            ...user,
-            batch_id: batchId,
-            team_name: null, // Clear Independent status
-            assigned_at: new Date().toISOString()
-        };
+            const updatedUser = {
+                ...user,
+                batch_id: batchId,
+                team_name: null, // Clear Independent status
+                assigned_at: new Date().toISOString()
+            };
 
-        await upsertEntity(TABLES.PROFILES, updatedUser);
+            await upsertEntity(TABLES.PROFILES, updatedUser);
+            setRecentlyAssigned(prev => new Set(prev).add(userId));
+        });
+
+        await Promise.all(promises);
         
-        // Mark as recently assigned for UI feedback
-        setRecentlyAssigned(prev => new Set(prev).add(userId));
-        
-        setSelectedUser(null);
-        fetchData();
-        alert(`User successfully assigned to batch.`);
+        setSelectedUserIds(new Set());
+        await fetchData();
+        alert(`Successfully assigned ${userIds.length} user(s) to batch.`);
     } catch (e: any) {
         console.error(e);
         alert(`Assignment failed: ${e.message}`);
+    } finally {
+        setIsLoading(false);
     }
   };
 
@@ -77,6 +82,24 @@ export function BatchAssignment() {
     u.name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
     u.email?.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const toggleUserSelection = (userId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setSelectedUserIds(prev => {
+        const next = new Set(prev);
+        if (next.has(userId)) next.delete(userId);
+        else next.add(userId);
+        return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedUserIds.size === filteredUsers.length && filteredUsers.length > 0) {
+        setSelectedUserIds(new Set());
+    } else {
+        setSelectedUserIds(new Set(filteredUsers.map(u => u.rowKey || u.RowKey || u.id)));
+    }
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '48px' }}>
@@ -99,6 +122,29 @@ export function BatchAssignment() {
                 />
             </div>
         </div>
+        
+        {/* Bulk Selection Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(83, 55, 43, 0.03)', padding: '12px 24px', borderRadius: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <input 
+                    type="checkbox" 
+                    checked={selectedUserIds.size === filteredUsers.length && filteredUsers.length > 0}
+                    onChange={toggleSelectAll}
+                    style={{ cursor: 'pointer', width: '18px', height: '18px', accentColor: '#9f4022' }}
+                />
+                <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#53372b' }}>
+                    {selectedUserIds.size} Operative(s) Selected
+                </span>
+            </div>
+            {selectedUserIds.size > 0 && (
+                <button 
+                    onClick={() => setSelectedUserIds(new Set())}
+                    style={{ background: 'transparent', border: 'none', color: '#9f4022', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', textTransform: 'uppercase' }}
+                >
+                    Clear Selection
+                </button>
+            )}
+        </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 350px', gap: '48px', alignItems: 'start' }}>
@@ -115,18 +161,25 @@ export function BatchAssignment() {
                  animate={{ opacity: 1, x: 0 }}
                  transition={{ delay: idx * 0.05 }}
                  className="premium-card"
-                 onClick={() => setSelectedUser(user)}
-                 style={{ 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'space-between', 
-                    padding: '24px 32px', 
+                 onClick={() => toggleUserSelection(user.rowKey || user.RowKey || user.id)}
+                 style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '24px 32px',
                     cursor: 'pointer',
-                    border: selectedUser?.rowKey === user.rowKey ? '2px solid #9f4022' : '1px solid rgba(83, 55, 43, 0.05)',
-                    background: selectedUser?.rowKey === user.rowKey ? 'rgba(159, 64, 34, 0.02)' : 'white'
+                    border: selectedUserIds.has(user.rowKey || user.RowKey || user.id) ? '2px solid #9f4022' : '1px solid rgba(83, 55, 43, 0.05)',
+                    background: selectedUserIds.has(user.rowKey || user.RowKey || user.id) ? 'rgba(159, 64, 34, 0.02)' : 'white'
                  }}
                >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+                     <input 
+                        type="checkbox" 
+                        checked={selectedUserIds.has(user.rowKey || user.RowKey || user.id)}
+                        onChange={(e) => toggleUserSelection(user.rowKey || user.RowKey || user.id, e as any)}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{ cursor: 'pointer', width: '18px', height: '18px', accentColor: '#9f4022' }}
+                     />
                      <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'rgba(83, 55, 43, 0.05)', color: '#53372b', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '18px' }}>
                         {user.name?.[0]?.toUpperCase()}
                      </div>
@@ -157,42 +210,48 @@ export function BatchAssignment() {
            )}
         </div>
 
-        {/* Assignment Sidebar */}
-        <AnimatePresence>
-            {selectedUser && (
-                <motion.div 
+         {/* Assignment Sidebar */}
+         <AnimatePresence>
+            {selectedUserIds.size > 0 && (
+                <motion.div
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.95 }}
-                    className="premium-card" 
+                    className="premium-card"
                     style={{ padding: '32px', position: 'sticky', top: '120px' }}
                 >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '32px' }}>
                         <div>
-                           <p style={{ fontSize: '9px', fontWeight: '900', color: '#9f4022', textTransform: 'uppercase', letterSpacing: '0.2em', marginBottom: '8px' }}>Assign Deployment</p>
-                           <h4 style={{ fontSize: '20px', fontFamily: "'Bodoni Moda', serif", fontWeight: '900', color: '#53372b', margin: 0 }}>{selectedUser.name}</h4>
+                           <p style={{ fontSize: '9px', fontWeight: '900', color: '#9f4022', textTransform: 'uppercase', letterSpacing: '0.2em', marginBottom: '8px' }}>
+                              {selectedUserIds.size > 1 ? 'Bulk Assignment' : 'Assign Deployment'}
+                           </p>
+                           <h4 style={{ fontSize: '20px', fontFamily: "'Bodoni Moda', serif", fontWeight: '900', color: '#53372b', margin: 0 }}>
+                              {selectedUserIds.size > 1
+                                ? `${selectedUserIds.size} Operatives Selected`
+                                : waitingUsers.find(u => selectedUserIds.has(u.rowKey || u.RowKey || u.id))?.name}
+                           </h4>
                         </div>
-                        <button onClick={() => setSelectedUser(null)} style={{ background: 'transparent', border: 'none', color: 'rgba(83, 55, 43, 0.2)', cursor: 'pointer' }}><X size={20} /></button>
+                        <button onClick={() => setSelectedUserIds(new Set())} style={{ background: 'transparent', border: 'none', color: 'rgba(83, 55, 43, 0.2)', cursor: 'pointer' }}><X size={20} /></button>
                     </div>
 
                     <p style={{ fontSize: '11px', fontWeight: 'bold', color: 'rgba(83, 55, 43, 0.3)', textTransform: 'uppercase', marginBottom: '16px' }}>Available Active Batches</p>
-                    
+
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         {activeBatches.length > 0 ? (
                           activeBatches.map(batch => (
-                            <button 
+                            <button
                               key={batch.rowKey || batch.RowKey}
-                              onClick={() => handleAssignBatch(selectedUser.rowKey || selectedUser.RowKey || selectedUser.id, batch.rowKey || batch.RowKey)}
+                              onClick={() => handleAssignBatch(Array.from(selectedUserIds), batch.rowKey || batch.RowKey)}
                               style={{ 
-                                display: 'flex', 
-                                alignItems: 'center', 
-                                justifyContent: 'space-between', 
-                                padding: '16px 20px', 
-                                borderRadius: '16px', 
-                                border: '1px solid rgba(83, 55, 43, 0.05)', 
-                                background: 'white', 
-                                cursor: 'pointer',
-                                transition: 'all 0.2s'
+                                 display: 'flex', 
+                                 alignItems: 'center', 
+                                 justifyContent: 'space-between', 
+                                 padding: '16px 20px', 
+                                 borderRadius: '16px', 
+                                 border: '1px solid rgba(83, 55, 43, 0.05)', 
+                                 background: 'white', 
+                                 cursor: 'pointer',
+                                 transition: 'all 0.2s'
                               }}
                               onMouseOver={(e) => { e.currentTarget.style.borderColor = '#9f4022'; e.currentTarget.style.background = 'rgba(159, 64, 34, 0.02)'; }}
                               onMouseOut={(e) => { e.currentTarget.style.borderColor = 'rgba(83, 55, 43, 0.05)'; e.currentTarget.style.background = 'white'; }}

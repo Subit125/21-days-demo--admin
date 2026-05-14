@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, X, Clock } from "lucide-react";
+import { Check, X, Clock, Rss } from "lucide-react";
 import { useState, useEffect } from "react";
 import { getAllEntities, TABLES, upsertEntity } from "@/lib/azureDb";
 
@@ -18,6 +18,7 @@ interface Submission {
   profiles?: any;
   tasks?: any;
   flashcards?: any;
+  published_to_feed?: boolean;
 }
 
 export function ApprovalsQueue({ batchId }: { batchId?: string }) {
@@ -87,14 +88,33 @@ export function ApprovalsQueue({ batchId }: { batchId?: string }) {
     }
   };
 
+  const toCleanSub = (sub: Submission) => {
+    const { profiles, tasks, flashcards, batch_name, id: _id, ...clean } = sub as any;
+    return clean;
+  };
+
+  const handleToggleFeed = async (sub: Submission, publish: boolean) => {
+    try {
+      await upsertEntity(TABLES.SUBMISSIONS, {
+        ...toCleanSub(sub),
+        published_to_feed: publish,
+        feed_published_at: publish ? new Date().toISOString() : null,
+      });
+      fetchSubmissions();
+    } catch (e: any) {
+      console.error('Feed Toggle Error:', e);
+      alert(`Failed to update feed: ${e.message}`);
+    }
+  };
+
   const handleStatusUpdate = async (sub: Submission, status: 'approved' | 'retry', comment?: string) => {
     try {
         const subId = sub.rowKey || sub.RowKey || sub.id;
         const userId = sub.user_id;
         const pts = sub.tasks?.points || sub.flashcards?.points || 0;
-        const adminEmail = 'Admin'; 
+        const adminEmail = 'Admin';
 
-        const { profiles, tasks, flashcards, batch_name, id: subIdInternal, ...cleanSub } = sub as any;
+        const cleanSub = toCleanSub(sub);
 
         await upsertEntity(TABLES.SUBMISSIONS, { 
             ...cleanSub,
@@ -137,6 +157,8 @@ export function ApprovalsQueue({ batchId }: { batchId?: string }) {
     rejected: totals.rejected,
     resubmit: totals.retry,
   };
+
+  const approvedProcessed = processed.filter((s: any) => s.status === 'approved');
 
   return (
     <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
@@ -250,7 +272,84 @@ export function ApprovalsQueue({ batchId }: { batchId?: string }) {
             </motion.div>
           ))}
         </AnimatePresence>
-        <AnimatePresence>
+      </div>
+
+      {/* Approved submissions — feed curation */}
+      {approvedProcessed.length > 0 && (
+        <div style={{ marginBottom: '80px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '24px' }}>
+            <Rss size={16} color="#9f4022" />
+            <h3 style={{ margin: 0, fontSize: '13px', fontWeight: '900', color: '#53372b', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Feed Curation</h3>
+            <span style={{ fontSize: '11px', color: 'rgba(83,55,43,0.4)', fontWeight: 'bold' }}>— toggle which approved posts appear in the batch feed</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {approvedProcessed.map((sub: any) => {
+                const isPublished = sub.published_to_feed === true || sub.published_to_feed === 'true';
+                return (
+                  <motion.div
+                    key={sub.id}
+                    layout
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '16px',
+                      background: 'white',
+                      border: `1px solid ${isPublished ? 'rgba(111, 142, 124, 0.3)' : 'rgba(83,55,43,0.08)'}`,
+                      borderRadius: '14px',
+                      padding: '12px 16px',
+                    }}
+                  >
+                    <div style={{ width: '52px', height: '52px', borderRadius: '10px', overflow: 'hidden', background: 'rgba(83,55,43,0.06)', flexShrink: 0 }}>
+                      {sub.file_url && !sub.file_url.toLowerCase().match(/\.(mp4|webm|ogg|mov)$/) ? (
+                        <img src={sub.file_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : (
+                        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px' }}>
+                          {sub.file_url ? '🎬' : '📄'}
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ margin: 0, fontSize: '13px', fontWeight: '900', color: '#53372b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {sub.profiles?.name}
+                      </p>
+                      <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'rgba(83,55,43,0.45)', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.04em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {sub.tasks?.title || sub.flashcards?.text || 'Submission'} · {sub.profiles?.team_name || 'No Clan'}
+                      </p>
+                    </div>
+
+                    {isPublished && (
+                      <span style={{ fontSize: '10px', fontWeight: '900', color: '#6f8e7c', background: 'rgba(111,142,124,0.1)', padding: '3px 8px', borderRadius: '6px', textTransform: 'uppercase', letterSpacing: '0.06em', flexShrink: 0 }}>
+                        Live
+                      </span>
+                    )}
+
+                    <button
+                      onClick={() => handleToggleFeed(sub, !isPublished)}
+                      style={{
+                        padding: '8px 16px',
+                        borderRadius: '8px',
+                        border: 'none',
+                        fontSize: '11px',
+                        fontWeight: 'bold',
+                        cursor: 'pointer',
+                        flexShrink: 0,
+                        background: isPublished ? 'rgba(210, 116, 64, 0.1)' : '#9f4022',
+                        color: isPublished ? '#d27440' : 'white',
+                      }}
+                    >
+                      {isPublished ? '✕ Remove' : '↑ Publish'}
+                    </button>
+                  </motion.div>
+                );
+              })}
+          </div>
+        </div>
+      )}
+
+      <AnimatePresence>
         {selectedImage && (
           <div style={{ position: 'fixed', inset: 0, zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px' }}>
              <motion.div 
@@ -281,7 +380,6 @@ export function ApprovalsQueue({ batchId }: { batchId?: string }) {
           </div>
         )}
       </AnimatePresence>
-    </div>
     </div>
   );
 }
