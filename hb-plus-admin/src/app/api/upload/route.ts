@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import { BlobServiceClient } from '@azure/storage-blob';
 
-const accountName = "hbplusstorage";
-const containerName = "hb-playground";
-const sasToken = "sv=2019-12-12&ss=bt&srt=sco&sp=rdwaup&se=2027-01-01T00%3A00%3A00Z&spr=https&sig=I%2Fr6ukvInxcGfSJvRegM%2FFF04elIYXV9qskCFT6LrFQ%3D";
+const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME || "hbplusstorage";
+const containerName = process.env.AZURE_STORAGE_CONTAINER || "hb-playground";
+const sasToken = process.env.AZURE_STORAGE_SAS_TOKEN || "";
 const endpoint = `https://${accountName}.blob.core.windows.net`;
 
 export async function POST(request: Request) {
@@ -14,6 +14,11 @@ export async function POST(request: Request) {
 
     if (!file) {
       return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
+    }
+
+    if (!sasToken) {
+      console.error('AZURE_STORAGE_SAS_TOKEN is not defined in environment variables');
+      return NextResponse.json({ error: 'Storage credentials configuration error' }, { status: 500 });
     }
 
     const blobServiceClient = new BlobServiceClient(`${endpoint}?${sasToken}`);
