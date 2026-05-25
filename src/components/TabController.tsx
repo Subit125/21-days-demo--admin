@@ -22,7 +22,11 @@ const tabs = [
   { id: "batch-assign", label: "Batch Assign", icon: UserPlus },
 ];
 
-export function TabController() {
+interface TabControllerProps {
+  user?: { email: string; name: string; picture: string } | null;
+}
+
+export function TabController({ user }: TabControllerProps) {
   const [activeTab, setActiveTab] = useState("home");
 
   return (

@@ -100,11 +100,11 @@ export function AnalyticsDashboard() {
       if (!profiles) return;
 
       const pointMap: { [key: string]: number } = {};
-      (allSubs || []).filter(s => s.status === 'approved').forEach(s => {
+      (allSubs || []).filter((s: any) => s.status === 'approved').forEach((s: any) => {
           const pts = Number(s.points) || 0;
           pointMap[s.user_id] = (pointMap[s.user_id] || 0) + pts;
       });
-      (allAwards || []).forEach(a => {
+      (allAwards || []).forEach((a: any) => {
           pointMap[a.user_id] = (pointMap[a.user_id] || 0) + (Number(a.points) || 0);
       });
 
