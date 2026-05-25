@@ -3,7 +3,7 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, Users, Award, Sparkles, Trash2, ShieldCheck, X, Edit2, Check, Camera } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
-import { getAllEntities, TABLES, upsertEntity } from "@/lib/azureDb";
+import { getAllEntities, TABLES, upsertEntity, deleteEntity } from "@/lib/azureDb";
 import { uploadToAzure } from "@/lib/azureClient";
 
 interface Clan {
@@ -17,7 +17,12 @@ interface Clan {
   bg: string;
 }
 
-export function TeamManagement() {
+interface TeamManagementProps {
+  batchId: string;
+  isLocked?: boolean;
+}
+
+export function TeamManagement({ batchId, isLocked }: TeamManagementProps) {
   const [clans, setClans] = useState<Clan[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isMemberPickerOpen, setIsMemberPickerOpen] = useState(false);
@@ -132,7 +137,7 @@ export function TeamManagement() {
 
   const removeFromTeam = async (userId: string) => {
     const allProfiles = await getAllEntities(TABLES.PROFILES);
-    const user = allProfiles.find(p => p.rowKey === userId || p.id === userId);
+    const user = allProfiles.find((p: any) => p.rowKey === userId || p.id === userId);
     if (user) {
         await upsertEntity(TABLES.PROFILES, { ...user, team_name: 'Independent' });
         fetchData();
@@ -142,7 +147,7 @@ export function TeamManagement() {
   const deleteClan = async (clanName: string) => {
     if (clanName === 'Independent') return;
     const allProfiles = await getAllEntities(TABLES.PROFILES);
-    const teamMembers = allProfiles.filter(p => p.team_name === clanName);
+    const teamMembers = allProfiles.filter((p: any) => p.team_name === clanName);
     for (const m of teamMembers) {
         await upsertEntity(TABLES.PROFILES, { ...m, team_name: 'Independent' });
     }
@@ -156,7 +161,7 @@ export function TeamManagement() {
 
   const makeCaptain = async (userId: string, teamName: string) => {
     const allProfiles = await getAllEntities(TABLES.PROFILES);
-    const teamMembers = allProfiles.filter(p => p.team_name === teamName);
+    const teamMembers = allProfiles.filter((p: any) => p.team_name === teamName);
     for (const m of teamMembers) {
         await upsertEntity(TABLES.PROFILES, { ...m, role: (m.rowKey === userId || m.id === userId) ? 'captain' : 'member' });
     }
@@ -175,7 +180,7 @@ export function TeamManagement() {
         await deleteEntity(TABLES.CLANS, 'Clan', oldName);
 
         const allProfiles = await getAllEntities(TABLES.PROFILES);
-        const teamMembers = allProfiles.filter(p => p.team_name === oldName);
+        const teamMembers = allProfiles.filter((p: any) => p.team_name === oldName);
         for (const m of teamMembers) {
             await upsertEntity(TABLES.PROFILES, { ...m, team_name: renameValue });
         }
