@@ -1,0 +1,23 @@
+# Dependency directories
+node_modules/
+**/node_modules/
+
+# VS Code directory
+.vscode/
+
+# Local env files
+.env*
+**/.env*
+
+# Next.js build output
+.next/
+**/.next/
+out/
+**/out/
+
+# Log files
+*.log
+**/*.log
+
+# Scratch folders
+**/scratch/
