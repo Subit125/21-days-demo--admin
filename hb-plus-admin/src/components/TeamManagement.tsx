@@ -52,6 +52,10 @@ export function TeamManagement({ batchId, isLocked }: TeamManagementProps) {
 
       if (!profiles) return;
 
+      // Only show profiles and clans that belong to this batch
+      const batchProfiles = profiles.filter((p: any) => p.batch_id === batchId);
+      const batchClans = (clansData || []).filter((c: any) => c.batch_id === batchId);
+
       const pointMap: { [key: string]: number } = {};
       (subs || []).filter((s: any) => s.status === 'approved').forEach((s: any) => {
           const pts = Number(s.points) || 0;
@@ -63,17 +67,17 @@ export function TeamManagement({ batchId, isLocked }: TeamManagementProps) {
 
       const teamGroups: { [key: string]: Clan } = {};
       const colors = ["#9f4022", "#747440", "#344161", "#a9674d", "#d27440", "#6f8e7c"];
-      
-      profiles.forEach((p: any) => {
+
+      batchProfiles.forEach((p: any) => {
           const teamName = p.team_name || 'Independent';
           const userPoints = pointMap[p.rowKey || p.RowKey || p.id] || 0;
           if (!teamGroups[teamName]) {
-              const clanInfo = clansData?.find((c: any) => c.name === teamName);
-              teamGroups[teamName] = { 
-                  id: teamName, 
-                  name: teamName, 
-                  members: 0, 
-                  points: 0, 
+              const clanInfo = batchClans.find((c: any) => c.name === teamName);
+              teamGroups[teamName] = {
+                  id: teamName,
+                  name: teamName,
+                  members: 0,
+                  points: 0,
                   logo_url: clanInfo?.logo_url || null,
                   memberList: [],
                   color: colors[Object.keys(teamGroups).length % colors.length],
@@ -82,17 +86,17 @@ export function TeamManagement({ batchId, isLocked }: TeamManagementProps) {
           }
           teamGroups[teamName].members += 1;
           teamGroups[teamName].points += userPoints;
-          teamGroups[teamName].memberList.push({ 
-            id: p.rowKey || p.RowKey || p.id, 
-            name: p.name, 
-            email: p.email, 
-            role: p.role, 
-            points: userPoints 
+          teamGroups[teamName].memberList.push({
+            id: p.rowKey || p.RowKey || p.id,
+            name: p.name,
+            email: p.email,
+            role: p.role,
+            points: userPoints
           });
       });
 
       setClans(Object.values(teamGroups));
-      setAvailableUsers(profiles.filter((p: any) => !p.team_name || p.team_name === 'Independent'));
+      setAvailableUsers(batchProfiles.filter((p: any) => !p.team_name || p.team_name === 'Independent'));
     } catch (err) {
       console.error('fetchData error:', err);
     }
@@ -110,7 +114,7 @@ export function TeamManagement({ batchId, isLocked }: TeamManagementProps) {
   const handleInitialize = async () => {
     if (!newClan.name.trim()) return;
     try {
-        await upsertEntity(TABLES.CLANS, { partitionKey: 'Clan', rowKey: newClan.name, name: newClan.name, logo_url: newClan.logo_url });
+        await upsertEntity(TABLES.CLANS, { partitionKey: 'Clan', rowKey: newClan.name, name: newClan.name, logo_url: newClan.logo_url, batch_id: batchId });
         if (selectedInitialMembers.length > 0) {
             for (const userId of selectedInitialMembers) {
                 const user = availableUsers.find(u => u.rowKey === userId || u.id === userId);
@@ -176,7 +180,7 @@ export function TeamManagement({ batchId, isLocked }: TeamManagementProps) {
     
     try {
         const clan = clans.find(c => c.name === oldName);
-        await upsertEntity(TABLES.CLANS, { partitionKey: 'Clan', rowKey: renameValue, name: renameValue, logo_url: clan?.logo_url });
+        await upsertEntity(TABLES.CLANS, { partitionKey: 'Clan', rowKey: renameValue, name: renameValue, logo_url: clan?.logo_url, batch_id: batchId });
         await deleteEntity(TABLES.CLANS, 'Clan', oldName);
 
         const allProfiles = await getAllEntities(TABLES.PROFILES);
@@ -199,7 +203,7 @@ export function TeamManagement({ batchId, isLocked }: TeamManagementProps) {
         // Assuming uploadToAzure handles the storage part
         const fUrl = await uploadToAzure(file, `clans/${teamName}`);
         const clan = clans.find(c => c.name === teamName);
-        await upsertEntity(TABLES.CLANS, { partitionKey: 'Clan', rowKey: teamName, name: teamName, logo_url: fUrl });
+        await upsertEntity(TABLES.CLANS, { partitionKey: 'Clan', rowKey: teamName, name: teamName, logo_url: fUrl, batch_id: batchId });
         
         fetchData();
         alert('Logo updated successfully!');

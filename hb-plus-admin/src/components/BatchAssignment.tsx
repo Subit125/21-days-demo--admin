@@ -58,6 +58,7 @@ export function BatchAssignment() {
                 ...user,
                 batch_id: batchId,
                 team_name: null, // Clear Independent status
+                is_allowed: true,
                 assigned_at: new Date().toISOString()
             };
 
