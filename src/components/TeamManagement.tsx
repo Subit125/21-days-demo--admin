@@ -95,6 +95,22 @@ export function TeamManagement({ batchId, isLocked }: TeamManagementProps) {
           });
       });
 
+      // Also include clans that exist in the Clans table but have no members yet
+      batchClans.forEach((c: any) => {
+          if (!teamGroups[c.name]) {
+              teamGroups[c.name] = {
+                  id: c.name,
+                  name: c.name,
+                  members: 0,
+                  points: 0,
+                  logo_url: c.logo_url || null,
+                  memberList: [],
+                  color: colors[Object.keys(teamGroups).length % colors.length],
+                  bg: `${colors[Object.keys(teamGroups).length % colors.length]}10`
+              };
+          }
+      });
+
       setClans(Object.values(teamGroups));
       setAvailableUsers(batchProfiles.filter((p: any) => !p.team_name || p.team_name === 'Independent'));
     } catch (err) {
