@@ -1,6 +1,3 @@
 {
-  "framework": "nextjs",
-  "buildCommand": "cd hb-plus-admin && npm run build",
-  "outputDirectory": "hb-plus-admin/.next",
-  "installCommand": "cd hb-plus-admin && npm install"
+  "framework": "nextjs"
 }
