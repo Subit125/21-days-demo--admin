@@ -129,7 +129,11 @@ export function TaskManagement({ batchId, user, isLocked }: { batchId?: string, 
       setFlashCards(filteredCards);
       setSubmissions(allSubmissions || []);
       setProfiles(allProfiles || []);
-      setMembers((allProfiles || []).map((p: any) => ({ id: p.rowKey || p.RowKey, name: p.name })));
+      // Scope the Target Client picker to this batch only — otherwise an admin on one
+      // batch's page could target a member from a different batch, whose wildcard would
+      // then never show up for anyone (batch_id won't match their own).
+      const batchProfiles = (allProfiles || []).filter((p: any) => !batchId || p.batch_id === batchId || p.BatchId === batchId);
+      setMembers(batchProfiles.map((p: any) => ({ id: p.rowKey || p.RowKey, name: p.name })));
     } catch (err) {
       console.error('TaskManagement fetchData error:', err);
     } finally {
