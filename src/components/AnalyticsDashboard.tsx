@@ -91,22 +91,37 @@ export function AnalyticsDashboard() {
 
   const fetchTeamData = async () => {
     try {
-      const [profiles, allSubs, allAwards] = await Promise.all([
+      const [profiles, allSubs, allAwards, allTasks, allFlashcards] = await Promise.all([
         getAllEntities(TABLES.PROFILES),
         getAllEntities(TABLES.SUBMISSIONS),
-        getAllEntities(TABLES.MANUAL_AWARDS)
+        getAllEntities(TABLES.MANUAL_AWARDS),
+        getAllEntities(TABLES.TASKS),
+        getAllEntities(TABLES.FLASHCARDS)
       ]);
 
       if (!profiles) return;
 
-      const pointMap: { [key: string]: number } = {};
-      (allSubs || []).filter((s: any) => s.status === 'approved').forEach((s: any) => {
-          const pts = Number(s.points) || 0;
-          pointMap[s.user_id] = (pointMap[s.user_id] || 0) + pts;
-      });
-      (allAwards || []).forEach((a: any) => {
-          pointMap[a.user_id] = (pointMap[a.user_id] || 0) + (Number(a.points) || 0);
-      });
+      const approvedSubs = (allSubs || []).filter((s: any) => s.status === 'approved');
+
+      // Submissions don't store points themselves — look up the linked Task/Flashcard,
+      // and only count it if that Task/Flashcard belongs to the member's CURRENT batch
+      // (a user's history can include submissions from a batch they were previously in).
+      const pointsForUser = (uid: string, currentBatchId: any) => {
+          let pts = 0;
+          approvedSubs.filter((s: any) => s.user_id === uid).forEach((s: any) => {
+              if (s.task_id) {
+                  const t = (allTasks || []).find((tk: any) => (tk.rowKey || tk.RowKey) === s.task_id);
+                  if (t && (t.batch_id || t.BatchId) === currentBatchId) pts += Number(t.points || t.Points || 0);
+              } else if (s.flashcard_id) {
+                  const f = (allFlashcards || []).find((fc: any) => (fc.rowKey || fc.RowKey) === s.flashcard_id);
+                  if (f && (f.batch_id || f.BatchId) === currentBatchId) pts += Number(f.points || f.Points || 0);
+              }
+          });
+          (allAwards || []).filter((a: any) => a.user_id === uid).forEach((a: any) => {
+              pts += Number(a.points || a.Points || 0);
+          });
+          return pts;
+      };
 
       const rankings: { [key: string]: { name: string, points: number, members: number } } = {};
       profiles.forEach((p: any) => {
@@ -115,7 +130,7 @@ export function AnalyticsDashboard() {
           if (!rankings[team]) {
               rankings[team] = { name: team, points: 0, members: 0 };
           }
-          rankings[team].points += (pointMap[p.rowKey || p.RowKey || p.id] || 0);
+          rankings[team].points += pointsForUser(p.rowKey || p.RowKey || p.id, p.batch_id || p.BatchId);
           rankings[team].members += 1;
       });
 

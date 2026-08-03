@@ -43,11 +43,13 @@ export function TeamManagement({ batchId, isLocked }: TeamManagementProps) {
 
   const fetchData = async () => {
     try {
-      const [profiles, clansData, subs, awards] = await Promise.all([
+      const [profiles, clansData, subs, awards, tasks, flashcards] = await Promise.all([
         getAllEntities(TABLES.PROFILES) as Promise<any[]>,
         getAllEntities(TABLES.CLANS) as Promise<any[]>,
         getAllEntities(TABLES.SUBMISSIONS) as Promise<any[]>,
-        getAllEntities(TABLES.MANUAL_AWARDS) as Promise<any[]>
+        getAllEntities(TABLES.MANUAL_AWARDS) as Promise<any[]>,
+        getAllEntities(TABLES.TASKS) as Promise<any[]>,
+        getAllEntities(TABLES.FLASHCARDS) as Promise<any[]>
       ]);
 
       if (!profiles) return;
@@ -56,9 +58,19 @@ export function TeamManagement({ batchId, isLocked }: TeamManagementProps) {
       const batchProfiles = profiles.filter((p: any) => p.batch_id === batchId);
       const batchClans = (clansData || []).filter((c: any) => c.batch_id === batchId);
 
+      // Submissions don't store points themselves — look up the linked Task/Flashcard,
+      // and only count it if that Task/Flashcard actually belongs to this batch
+      // (a user's history can include submissions from a batch they were previously in).
       const pointMap: { [key: string]: number } = {};
       (subs || []).filter((s: any) => s.status === 'approved').forEach((s: any) => {
-          const pts = Number(s.points) || 0;
+          let pts = 0;
+          if (s.task_id) {
+              const t = (tasks || []).find((tk: any) => (tk.rowKey || tk.RowKey) === s.task_id);
+              if (t && (t.batch_id || t.BatchId) === batchId) pts = Number(t.points || t.Points || 0);
+          } else if (s.flashcard_id) {
+              const f = (flashcards || []).find((fc: any) => (fc.rowKey || fc.RowKey) === s.flashcard_id);
+              if (f && (f.batch_id || f.BatchId) === batchId) pts = Number(f.points || f.Points || 0);
+          }
           pointMap[s.user_id] = (pointMap[s.user_id] || 0) + pts;
       });
       (awards || []).forEach((a: any) => {

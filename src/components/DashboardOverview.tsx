@@ -32,12 +32,13 @@ export function DashboardOverview({ batchId }: { batchId?: string }) {
 
   const fetchStats = async () => {
     try {
-      const [allProfiles, allSubs, allTasks, allClans, allFlashcards] = await Promise.all([
+      const [allProfiles, allSubs, allTasks, allClans, allFlashcards, allAwards] = await Promise.all([
         getAllEntities(TABLES.PROFILES),
         getAllEntities(TABLES.SUBMISSIONS),
         getAllEntities(TABLES.TASKS),
         getAllEntities(TABLES.CLANS),
         getAllEntities(TABLES.FLASHCARDS),
+        getAllEntities(TABLES.MANUAL_AWARDS),
       ]);
 
       const profiles = allProfiles || [];
@@ -45,7 +46,30 @@ export function DashboardOverview({ batchId }: { batchId?: string }) {
       const tasks = allTasks || [];
       const clans = allClans || [];
       const allFlash = allFlashcards || [];
+      const awards = allAwards || [];
       const batches = allFlash.filter((e: any) => (e.partitionKey === "CONFIG_BATCH" || e.PartitionKey === "CONFIG_BATCH"));
+
+      const approvedSubs = subs.filter((s: any) => s.status === 'approved');
+
+      // Submissions don't store points themselves — look up the linked Task/Flashcard,
+      // and only count it if that Task/Flashcard belongs to the member's CURRENT batch
+      // (a user's history can include submissions from a batch they were previously in).
+      const computePoints = (uid: string, currentBatchId: any) => {
+          let pts = 0;
+          approvedSubs.filter((s: any) => s.user_id === uid).forEach((s: any) => {
+              if (s.task_id) {
+                  const t = tasks.find((tk: any) => (tk.rowKey || tk.RowKey) === s.task_id);
+                  if (t && (t.batch_id || t.BatchId) === currentBatchId) pts += Number(t.points || t.Points || 0);
+              } else if (s.flashcard_id) {
+                  const f = allFlash.find((fc: any) => (fc.rowKey || fc.RowKey) === s.flashcard_id);
+                  if (f && (f.batch_id || f.BatchId) === currentBatchId) pts += Number(f.points || f.Points || 0);
+              }
+          });
+          awards.filter((a: any) => a.user_id === uid).forEach((a: any) => {
+              pts += Number(a.points || a.Points || 0);
+          });
+          return pts;
+      };
 
       if (!batchId) {
         // --- COMMAND CENTER LOGIC (Main Home Page) ---
@@ -62,11 +86,12 @@ export function DashboardOverview({ batchId }: { batchId?: string }) {
                 currentDay = Math.max(1, Math.min(28, diff + 1));
             }
 
-            const topMember = [...bProfiles].sort((a: any, b: any) => (Number(b.points) || 0) - (Number(a.points) || 0))[0];
+            const bProfilesWithPoints = bProfiles.map((p: any) => ({ ...p, points: computePoints(p.rowKey || p.RowKey, bId) }));
+            const topMember = [...bProfilesWithPoints].sort((a: any, b: any) => b.points - a.points)[0];
 
             const bClans = clans.map((c: any) => {
-                const clanMembers = bProfiles.filter((p: any) => p.team_name === c.name);
-                const points = clanMembers.reduce((sum: number, p: any) => sum + (Number(p.points) || 0), 0);
+                const clanMembers = bProfilesWithPoints.filter((p: any) => p.team_name === c.name);
+                const points = clanMembers.reduce((sum: number, p: any) => sum + p.points, 0);
                 return { ...c, points };
             }).sort((a: any, b: any) => b.points - a.points);
             const topClan = bClans[0];
@@ -103,11 +128,12 @@ export function DashboardOverview({ batchId }: { batchId?: string }) {
         const filteredSubs = subs.filter((s: any) => memberIds.has(s.user_id));
         const filteredTasks = tasks.filter((t: any) => t.batch_id === batchId || !t.batch_id);
 
-        const topMember = [...filteredProfiles].sort((a: any, b: any) => (Number(b.points) || 0) - (Number(a.points) || 0))[0];
+        const filteredProfilesWithPoints = filteredProfiles.map((p: any) => ({ ...p, points: computePoints(p.rowKey || p.RowKey, batchId) }));
+        const topMember = [...filteredProfilesWithPoints].sort((a: any, b: any) => b.points - a.points)[0];
 
         const clanRanked = clans.map((c: any) => {
-            const clanMembers = filteredProfiles.filter((p: any) => p.team_name === c.name || p.clan_id === (c.rowKey || c.RowKey));
-            const points = clanMembers.reduce((sum: number, p: any) => sum + (Number(p.points) || 0), 0);
+            const clanMembers = filteredProfilesWithPoints.filter((p: any) => p.team_name === c.name || p.clan_id === (c.rowKey || c.RowKey));
+            const points = clanMembers.reduce((sum: number, p: any) => sum + p.points, 0);
             return { ...c, points };
         }).sort((a: any, b: any) => b.points - a.points);
         const topClan = clanRanked[0];

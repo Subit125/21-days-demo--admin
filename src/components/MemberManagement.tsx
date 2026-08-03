@@ -27,9 +27,40 @@ export function MemberManagement({ batchId, isLocked }: { batchId?: string, isLo
 
   const fetchMembers = async () => {
     try {
-        const allProfiles = await getAllEntities(TABLES.PROFILES) || [];
-        const filtered = batchId ? allProfiles.filter((p: any) => p.batch_id === batchId) : allProfiles;
-        setMembers(filtered.map((p: any) => ({ ...p, id: p.rowKey || p.RowKey })));
+        const [allProfiles, allSubs, allAwards, allTasks, allFlashcards] = await Promise.all([
+            getAllEntities(TABLES.PROFILES),
+            getAllEntities(TABLES.SUBMISSIONS),
+            getAllEntities(TABLES.MANUAL_AWARDS),
+            getAllEntities(TABLES.TASKS),
+            getAllEntities(TABLES.FLASHCARDS),
+        ]);
+        const filtered = batchId ? (allProfiles||[]).filter((p: any) => p.batch_id === batchId) : (allProfiles||[]);
+
+        const enriched = filtered.map((p: any) => {
+            const uid = p.rowKey || p.RowKey;
+
+            const approvedSubs = (allSubs||[]).filter((s: any) =>
+                s.user_id === uid && s.status === 'approved'
+            );
+            const memberAwards = (allAwards||[]).filter((a: any) => a.user_id === uid);
+
+            let points = 0;
+            approvedSubs.forEach((s: any) => {
+                if (s.task_id) {
+                    const t = (allTasks||[]).find((tk: any) => (tk.rowKey||tk.RowKey) === s.task_id);
+                    // Only count tasks that belong to this member's CURRENT batch
+                    if (t && (t.batch_id || t.BatchId) === p.batch_id) points += Number(t.points || t.Points || 0);
+                } else if (s.flashcard_id) {
+                    const f = (allFlashcards||[]).find((fc: any) => (fc.rowKey||fc.RowKey) === s.flashcard_id);
+                    if (f && (f.batch_id || f.BatchId) === p.batch_id) points += Number(f.points || f.Points || 0);
+                }
+            });
+            memberAwards.forEach((a: any) => { points += Number(a.points || a.Points || 0); });
+
+            return { ...p, id: uid, points };
+        });
+
+        setMembers(enriched);
     } catch (err) {
         console.error("Fetch error:", err);
     } finally {

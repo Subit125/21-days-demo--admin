@@ -360,7 +360,8 @@ export function TaskManagement({ batchId, user, isLocked }: { batchId?: string, 
             proof_mode: newCardData.proof_mode || 'both',
             type: "challenge",
             deadline: new Date(cardDeadline).toISOString(),
-            target_user_id: targetClientId
+            target_user_id: targetClientId,
+            batch_id: batchId
         };
         await upsertEntity(TABLES.FLASHCARDS, newCard);
         
@@ -630,10 +631,11 @@ export function TaskManagement({ batchId, user, isLocked }: { batchId?: string, 
                         await upsertEntity(TABLES.FLASHCARDS, { 
                             partitionKey: 'Flashcard', 
                             rowKey: crypto.randomUUID(), 
-                            text: msg, 
-                            type: 'alert', 
+                            text: msg,
+                            type: 'alert',
                             points: 0,
-                            deadline: new Date(Date.now() + totalMins * 60000).toISOString()
+                            deadline: new Date(Date.now() + totalMins * 60000).toISOString(),
+                            batch_id: batchId
                         });
                         
                         (document.getElementById('system-broadcast-msg') as HTMLTextAreaElement).value = '';
