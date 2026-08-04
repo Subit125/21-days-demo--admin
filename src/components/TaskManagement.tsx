@@ -72,6 +72,18 @@ export function TaskManagement({ batchId, user, isLocked }: { batchId?: string, 
   });
   const [awardFile, setAwardFile] = useState<File | null>(null);
 
+  // Every task/wildcard/broadcast write must carry a batch_id — a write made without one
+  // is invisible or, worse, silently bleeds into whichever batch happens to share a day
+  // number and title. This is the single choke point all of those writes go through so
+  // that mistake can no longer slip in silently.
+  const requireBatchId = (): boolean => {
+    if (!batchId) {
+      alert("No batch selected — this action needs a specific batch context and can't be saved without one. Open this from a batch's own page (Batch Operations > select a batch), not the global view.");
+      return false;
+    }
+    return true;
+  };
+
   useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 4000);
@@ -295,6 +307,7 @@ export function TaskManagement({ batchId, user, isLocked }: { batchId?: string, 
 
   const handleAddTask = async () => {
     if (!newTaskData.title.trim()) return;
+    if (!requireBatchId()) return;
 
     let videoUrl = newTaskData.video_url;
     if (taskFile) {
@@ -345,6 +358,7 @@ export function TaskManagement({ batchId, user, isLocked }: { batchId?: string, 
 
   const handleAddFlashCard = async () => {
     if (!newCardData.text.trim()) return;
+    if (!requireBatchId()) return;
     
     let videoUrl = newCardData.video_url;
     if (cardFile) {
@@ -415,6 +429,7 @@ export function TaskManagement({ batchId, user, isLocked }: { batchId?: string, 
 
   const handleBatchAction = async () => {
     if (selectedTaskIds.length === 0) return;
+    if (!requireBatchId()) return;
     
     const targetWeek = Math.ceil(targetDay / 7);
     const selectedTasks = tasks.filter(t => selectedTaskIds.includes(t.id));
@@ -630,10 +645,11 @@ export function TaskManagement({ batchId, user, isLocked }: { batchId?: string, 
                     const totalMins = val * unit;
 
                     if (!msg.trim()) return;
-                    
+                    if (!requireBatchId()) return;
+
                     try {
-                        await upsertEntity(TABLES.FLASHCARDS, { 
-                            partitionKey: 'Flashcard', 
+                        await upsertEntity(TABLES.FLASHCARDS, {
+                            partitionKey: 'Flashcard',
                             rowKey: crypto.randomUUID(), 
                             text: msg,
                             type: 'alert',
