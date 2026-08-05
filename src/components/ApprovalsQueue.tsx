@@ -60,13 +60,14 @@ export function ApprovalsQueue({ batchId }: { batchId?: string }) {
           const task = (allTasks || []).find((t: any) => (t.rowKey || t.RowKey || t.id) === sub.task_id);
           const card = flashData.find((c: any) => (c.rowKey || c.RowKey || c.id) === sub.flashcard_id);
           const batch = batches.find((b: any) => (b.rowKey || b.RowKey || b.id) === profile?.batch_id);
-          
-          // DATE FILTER: Only show submissions from the CURRENT cycle of this batch
-          const batchStart = batch?.start_date ? new Date(batch.start_date) : new Date(0);
-          const subDate = new Date(sub.created_at || sub.Timestamp);
-          if (batchId && subDate < batchStart) return null;
 
-          return { 
+          // Not date-filtered against batch.start_date: the profile.batch_id match above
+          // already isolates a genuinely new cohort (a real reset deletes the old Task
+          // rows), and filtering by start_date here hid real pending submissions whenever
+          // a batch's start_date was reset after a member had already submitted earlier
+          // the same day.
+
+          return {
             ...sub, 
             id: sId, 
             profiles: profile, 
