@@ -523,13 +523,21 @@ export function MemberManagement({ batchId, isLocked }: { batchId?: string, isLo
                                                   {log.logType === 'submission' ? <Camera size={18} /> : <Award size={18} />}
                                               </div>
                                               <div>
-                                                  <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#53372b' }}>
-                                                      {log.logType === 'submission' 
+                                                  <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#53372b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                      {log.logType === 'submission'
                                                         ? (log.tasks?.title || log.flashcards?.text || 'Submission')
                                                         : (log.reason || 'Manual Points Award')}
+                                                      {/* Recurring habits (e.g. "10 Mins of Peace") share the same title across every
+                                                          day of the challenge — without this, two entries for different days are
+                                                          visually indistinguishable in the log. */}
+                                                      {log.logType === 'submission' && log.tasks?.day && (
+                                                        <span style={{ fontSize: '9px', fontWeight: '900', color: '#9f4022', background: 'rgba(159, 64, 34, 0.08)', padding: '2px 8px', borderRadius: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                                          Day {log.tasks.day}
+                                                        </span>
+                                                      )}
                                                   </div>
                                                   <div style={{ fontSize: '10px', color: 'rgba(83, 55, 43, 0.4)', marginTop: '2px' }}>
-                                                      {new Date(log.created_at).toLocaleString()} 
+                                                      {new Date(log.created_at).toLocaleString()}
                                                       {log.logType === 'submission' && ` ΓÇó Status: ${log.status}`}
                                                   </div>
                                                   {log.approved_by && (
