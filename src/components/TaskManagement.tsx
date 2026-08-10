@@ -135,6 +135,15 @@ export function TaskManagement({ batchId, user, isLocked }: { batchId?: string, 
 
       const filteredCards = (allFlashcards || [])
         .filter((f: any) => f.partitionKey === 'Flashcard' || f.PartitionKey === 'Flashcard')
+        .filter((f: any) => {
+          const fBatchId = f.batch_id || f.BatchId;
+          // Strict filter: only show wildcards belonging to this batch — mirrors the
+          // Tasks filter above. Without this, every batch's wildcards showed up
+          // together on every batch's page, with no way to tell whose was whose.
+          if (batchId && fBatchId !== batchId) return false;
+          // If no batchId provided, show all (for global view)
+          return true;
+        })
         .map((f: any) => ({ ...f, id: f.rowKey || f.RowKey }));
 
       setTasks(filteredTasks);
@@ -714,7 +723,17 @@ export function TaskManagement({ batchId, user, isLocked }: { batchId?: string, 
                     <div style={{ flex: 1 }}>
                         <p style={{ margin: 0, fontSize: '15px', color: '#53372b', fontWeight: 'bold' }}>"{card.text}"</p>
                         {card.description && <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: 'rgba(83, 55, 43, 0.6)' }}>{card.description}</p>}
-                        <div style={{ fontSize: '9px', fontWeight: 'bold', color: '#9f4022', textTransform: 'uppercase', marginTop: '6px' }}>{card.points || 50} Points Wildcard</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
+                          <span style={{ fontSize: '9px', fontWeight: 'bold', color: '#9f4022', textTransform: 'uppercase' }}>{card.points || 50} Points Wildcard</span>
+                          {/* Visible even on a batch's own page (not just the global view) so it's never
+                              ambiguous which batch a wildcard belongs to, matching the Day N badge added
+                              to the audit log for the same reason. */}
+                          {(card.batch_id || card.BatchId) && (
+                            <span style={{ fontSize: '9px', fontWeight: '900', color: '#53372b', background: 'rgba(83, 55, 43, 0.06)', padding: '2px 8px', borderRadius: '8px', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                              {card.batch_id || card.BatchId}
+                            </span>
+                          )}
+                        </div>
                     </div>
                     <button 
                         onClick={() => deleteFlashCard(card.id)}
