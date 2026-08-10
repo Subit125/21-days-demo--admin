@@ -83,13 +83,32 @@ export function MemberManagement({ batchId, isLocked }: { batchId?: string, isLo
             getAllEntities(TABLES.TASKS),
             getAllEntities(TABLES.FLASHCARDS),
         ]);
+
+        // Wildcards have a deadline, not a stored day number — derive one from how far
+        // into the batch it was submitted, so the log can still show "Day N" for them.
+        const batchConfig = (allFlashcards||[]).find((f: any) =>
+            (f.partitionKey === 'CONFIG_BATCH' || f.PartitionKey === 'CONFIG_BATCH') &&
+            (f.rowKey || f.RowKey) === member.batch_id
+        );
+        const batchStart = batchConfig?.start_date ? new Date(batchConfig.start_date) : null;
+        const deriveWildcardDay = (createdAt: string) => {
+            if (!batchStart) return null;
+            const diffDays = Math.floor((new Date(createdAt).getTime() - batchStart.getTime()) / (24 * 60 * 60 * 1000));
+            return Math.max(1, diffDays + 1);
+        };
+
         const memberSubs = (allSubs||[]).filter((s: any) => s.user_id === mId);
         const memberAwards = (allAwards||[]).filter((a: any) => a.user_id === mId);
-        const enrichedSubs = memberSubs.map((s: any) => ({
-            ...s, logType: 'submission',
-            tasks: (allTasks||[]).find((t: any) => (t.rowKey||t.RowKey) === s.task_id),
-            flashcards: (allFlashcards||[]).find((f: any) => (f.rowKey||f.RowKey) === s.flashcard_id),
-        }));
+        const enrichedSubs = memberSubs.map((s: any) => {
+            const task = (allTasks||[]).find((t: any) => (t.rowKey||t.RowKey) === s.task_id);
+            const flashcard = (allFlashcards||[]).find((f: any) => (f.rowKey||f.RowKey) === s.flashcard_id);
+            return {
+                ...s, logType: 'submission',
+                tasks: task,
+                flashcards: flashcard,
+                wildcardDay: (!task && flashcard) ? deriveWildcardDay(s.created_at || s.Timestamp) : null,
+            };
+        });
         const combined = [
             ...enrichedSubs,
             ...memberAwards.map((a: any) => ({ ...a, logType: 'award' }))
@@ -529,10 +548,12 @@ export function MemberManagement({ batchId, isLocked }: { batchId?: string, isLo
                                                         : (log.reason || 'Manual Points Award')}
                                                       {/* Recurring habits (e.g. "10 Mins of Peace") share the same title across every
                                                           day of the challenge — without this, two entries for different days are
-                                                          visually indistinguishable in the log. */}
-                                                      {log.logType === 'submission' && log.tasks?.day && (
+                                                          visually indistinguishable in the log. Wildcards have no stored day number
+                                                          (they're deadline-based, not day-based), so theirs is derived from how far
+                                                          into the batch they were submitted rather than read directly off the task. */}
+                                                      {log.logType === 'submission' && (log.tasks?.day || log.wildcardDay) && (
                                                         <span style={{ fontSize: '9px', fontWeight: '900', color: '#9f4022', background: 'rgba(159, 64, 34, 0.08)', padding: '2px 8px', borderRadius: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                                          Day {log.tasks.day}
+                                                          Day {log.tasks?.day || log.wildcardDay}
                                                         </span>
                                                       )}
                                                   </div>
