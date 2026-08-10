@@ -91,9 +91,15 @@ export function MemberManagement({ batchId, isLocked }: { batchId?: string, isLo
             (f.rowKey || f.RowKey) === member.batch_id
         );
         const batchStart = batchConfig?.start_date ? new Date(batchConfig.start_date) : null;
+        // Compare calendar dates only (ignore time-of-day), matching how the rest of the
+        // app defines "day N" — the batch may have started at, say, 10 PM, but everything
+        // submitted the next calendar day should read as Day 2, not still Day 1 until 10 PM.
         const deriveWildcardDay = (createdAt: string) => {
             if (!batchStart) return null;
-            const diffDays = Math.floor((new Date(createdAt).getTime() - batchStart.getTime()) / (24 * 60 * 60 * 1000));
+            const start = new Date(batchStart.getFullYear(), batchStart.getMonth(), batchStart.getDate());
+            const subDate = new Date(createdAt);
+            const sub = new Date(subDate.getFullYear(), subDate.getMonth(), subDate.getDate());
+            const diffDays = Math.round((sub.getTime() - start.getTime()) / (24 * 60 * 60 * 1000));
             return Math.max(1, diffDays + 1);
         };
 
