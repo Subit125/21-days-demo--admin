@@ -82,7 +82,15 @@ export function DashboardOverview({ batchId }: { batchId?: string }) {
 
             let currentDay = 1;
             if (batch.start_date) {
-                const diff = Math.floor((new Date().getTime() - new Date(batch.start_date).getTime()) / (1000 * 60 * 60 * 24));
+                // Calendar-date comparison, not exact-timestamp — matches the client app's
+                // day calculation. Comparing raw timestamps rolls the day over at whatever
+                // time-of-day the batch happened to start (e.g. 10 PM) instead of midnight,
+                // which put admin up to a full day behind what clients were actually seeing.
+                const start = new Date(batch.start_date);
+                const startDateOnly = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+                const now = new Date();
+                const nowDateOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                const diff = Math.floor((nowDateOnly.getTime() - startDateOnly.getTime()) / (1000 * 60 * 60 * 24));
                 currentDay = Math.max(1, Math.min(28, diff + 1));
             }
 
@@ -138,12 +146,17 @@ export function DashboardOverview({ batchId }: { batchId?: string }) {
         }).sort((a: any, b: any) => b.points - a.points);
         const topClan = clanRanked[0];
 
-        const today = new Date();
         const startDay = batches.find((b: any) => (b.rowKey || b.RowKey) === batchId)?.start_date;
 
         let currentDay = 1;
         if (startDay) {
-            const diff = Math.floor((today.getTime() - new Date(startDay).getTime()) / (1000 * 60 * 60 * 24));
+            // Calendar-date comparison, not exact-timestamp — see the matching comment
+            // in the Command Center branch above for why this matters.
+            const start = new Date(startDay);
+            const startDateOnly = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+            const today = new Date();
+            const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+            const diff = Math.floor((todayDateOnly.getTime() - startDateOnly.getTime()) / (1000 * 60 * 60 * 24));
             currentDay = Math.max(1, Math.min(21, diff + 1));
         }
 
