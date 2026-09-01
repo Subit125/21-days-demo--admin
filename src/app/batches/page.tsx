@@ -11,6 +11,22 @@ export default function BatchesPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [isCreating, setIsCreating] = useState(false);
     const [newBatch, setNewBatch] = useState({ name: '', start_date: new Date().toISOString().split('T')[0] });
+    const [editingBatch, setEditingBatch] = useState<any>(null);
+    const [editStartDate, setEditStartDate] = useState('');
+    const [isSavingDate, setIsSavingDate] = useState(false);
+
+    // Mirrors the client's day calculation (Client dashboard/src/App.jsx):
+    // whole days between midnight-of-start and midnight-of-today, +1, clamped 1..28.
+    const dayFromStartDate = (dateStr: string) => {
+        if (!dateStr) return 1;
+        const start = new Date(dateStr);
+        if (isNaN(start.getTime())) return 1;
+        const now = new Date();
+        const startOnly = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+        const nowOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const diff = nowOnly.getTime() - startOnly.getTime();
+        return Math.max(1, Math.min(28, Math.floor(diff / (1000 * 60 * 60 * 24)) + 1));
+    };
 
     const fetchBatches = async () => {
         setIsLoading(true);
@@ -75,6 +91,40 @@ export default function BatchesPage() {
             is_active: batch.is_active === false ? true : false
         });
         fetchBatches();
+    };
+
+    const openEditDate = (batch: any) => {
+        const raw = batch.start_date || batch.StartDate || batch.startDate;
+        const d = raw ? new Date(raw) : new Date();
+        setEditStartDate(isNaN(d.getTime()) ? new Date().toISOString().split('T')[0] : d.toISOString().split('T')[0]);
+        setEditingBatch(batch);
+    };
+
+    const saveStartDate = async () => {
+        if (!editingBatch || !editStartDate) return;
+        const rKey = editingBatch.rowKey || editingBatch.RowKey;
+        const newDay = dayFromStartDate(editStartDate);
+        const confirmMove = window.confirm(
+            `Set ${editingBatch.name}'s start date to ${new Date(editStartDate).toLocaleDateString()}?\n\n` +
+            `Members will move to Day ${newDay} of 21. Task release times recalculate from the new date. ` +
+            `Approved submissions are kept.`
+        );
+        if (!confirmMove) return;
+
+        setIsSavingDate(true);
+        try {
+            await upsertEntity("Flashcards", {
+                ...editingBatch,
+                partitionKey: "CONFIG_BATCH",
+                rowKey: rKey,
+                start_date: new Date(editStartDate).toISOString()
+            });
+            setEditingBatch(null);
+            fetchBatches();
+        } catch (err) {
+            alert("Failed to update start date: " + err);
+        }
+        setIsSavingDate(false);
     };
 
     const startChallenge = async (batch: any) => {
@@ -169,6 +219,24 @@ export default function BatchesPage() {
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '32px' }}>
                                         <Calendar size={16} color="#999" />
                                         <span style={{ fontSize: '14px', color: '#53372b', fontWeight: '500' }}>Starts: {new Date(batch.start_date).toLocaleDateString()}</span>
+                                        <button
+                                            onClick={() => openEditDate(batch)}
+                                            style={{
+                                                marginLeft: 'auto',
+                                                padding: '4px 10px',
+                                                borderRadius: '8px',
+                                                border: '1px solid #eee',
+                                                background: 'white',
+                                                color: '#9f4022',
+                                                fontSize: '10px',
+                                                fontWeight: 'bold',
+                                                textTransform: 'uppercase',
+                                                letterSpacing: '0.05em',
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            Edit Date
+                                        </button>
                                     </div>
 
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -352,6 +420,47 @@ export default function BatchesPage() {
                                     style={{ width: '100%', padding: '16px', background: '#9f4022', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer' }}
                                 >
                                     Deploy Protocol
+                                </button>
+                            </motion.div>
+                        </div>
+                    )}
+                </AnimatePresence>
+
+                {/* Edit Start Date Modal */}
+                <AnimatePresence>
+                    {editingBatch && (
+                        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+                            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} style={{ width: '400px', background: 'white', borderRadius: '24px', padding: '40px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '32px' }}>
+                                    <h3 style={{ margin: 0, fontSize: '20px', color: '#53372b' }}>Edit Start Date</h3>
+                                    <button onClick={() => setEditingBatch(null)} style={{ border: 'none', background: 'transparent', cursor: 'pointer' }}><X size={24} /></button>
+                                </div>
+
+                                <p style={{ margin: '0 0 20px 0', fontSize: '12px', color: '#999' }}>
+                                    {editingBatch.name} &middot; ID: {editingBatch.rowKey || editingBatch.RowKey}
+                                </p>
+
+                                <div style={{ marginBottom: '20px' }}>
+                                    <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', color: '#9f4022', textTransform: 'uppercase', marginBottom: '8px' }}>Start Date</label>
+                                    <input
+                                        type="date"
+                                        value={editStartDate}
+                                        onChange={(e) => setEditStartDate(e.target.value)}
+                                        style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', outline: 'none' }}
+                                    />
+                                </div>
+
+                                <div style={{ marginBottom: '32px', padding: '14px', background: '#fcfaf5', borderRadius: '12px', fontSize: '12px', color: '#53372b' }}>
+                                    Members will move to <strong>Day {dayFromStartDate(editStartDate)}</strong> of 21.
+                                    {dayFromStartDate(editStartDate) === 1 && ' The challenge restarts from the beginning.'}
+                                </div>
+
+                                <button
+                                    onClick={saveStartDate}
+                                    disabled={isSavingDate || !editStartDate}
+                                    style={{ width: '100%', padding: '16px', background: '#9f4022', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: isSavingDate ? 'not-allowed' : 'pointer', opacity: isSavingDate ? 0.6 : 1 }}
+                                >
+                                    {isSavingDate ? 'Saving...' : 'Save Start Date'}
                                 </button>
                             </motion.div>
                         </div>
