@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { getAllEntities, TABLES } from "@/lib/azureDb";
-import { getBatchStart, awardBelongsToBatch } from "@/lib/points";
+import { getBatchStart, awardBelongsToBatch, submissionBelongsToBatch } from "@/lib/points";
 
 export function DashboardOverview({ batchId }: { batchId?: string }) {
   const [batchData, setBatchData] = useState<any[]>([]);
@@ -184,7 +184,11 @@ export function DashboardOverview({ batchId }: { batchId?: string }) {
             topTeam: topClan?.name || 'TBD',
             topClient: topMember?.name || 'TBD',
             activeCount: filteredProfiles.length,
-            pendingCount: filteredSubs.filter((s: any) => s.status === 'under-review').length,
+            // Same batch check as the approvals queue — a member carried over from an
+            // earlier cohort must not bring that cohort's pending items into this count.
+            pendingCount: filteredSubs.filter((s: any) =>
+                s.status === 'under-review' && submissionBelongsToBatch(s, batchId, tasks, allFlash)
+            ).length,
             taskEngagement,
         });
       }

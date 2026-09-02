@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Check, X, Clock } from "lucide-react";
 import { useState, useEffect } from "react";
 import { getAllEntities, TABLES, upsertEntity } from "@/lib/azureDb";
+import { submissionBelongsToBatch } from "@/lib/points";
 
 interface Submission {
   id: string;
@@ -56,6 +57,12 @@ export function ApprovalsQueue({ batchId }: { batchId?: string }) {
           
           // Only include if no batchId filter is set, OR if the profile matches the batchId
           if (batchId && profile?.batch_id !== batchId) return null;
+
+          // ...and the submission itself must belong to this batch. Membership alone is
+          // not enough: a member moved over from an earlier cohort brings all of their
+          // old submissions with them, and those were counted here as this batch's
+          // approvals and resubmits, which is misleading when reviewing a queue.
+          if (batchId && !submissionBelongsToBatch(sub, batchId, allTasks || [], flashData)) return null;
 
           const task = (allTasks || []).find((t: any) => (t.rowKey || t.RowKey || t.id) === sub.task_id);
           const card = flashData.find((c: any) => (c.rowKey || c.RowKey || c.id) === sub.flashcard_id);

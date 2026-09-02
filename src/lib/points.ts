@@ -38,6 +38,31 @@ export const awardBelongsToBatch = (award: any, batchId: any, batchStart: Date |
 };
 
 /**
+ * Does this submission belong to `batchId`?
+ *
+ * A submission row stores only user_id plus the task/flashcard it answers — never a
+ * batch. Filtering by "is this member in this batch" therefore keeps every submission
+ * they have ever made, including ones from a cohort they have since been moved out of.
+ * The batch is decided by the item that was answered, not by where the member sits now.
+ */
+export const submissionBelongsToBatch = (
+    sub: any,
+    batchId: any,
+    allTasks: any[],
+    allFlashcards: any[]
+): boolean => {
+    if (sub?.task_id) {
+        const t = (allTasks || []).find((tk: any) => (tk.rowKey || tk.RowKey) === sub.task_id);
+        return !!t && (t.batch_id || t.BatchId) === batchId;
+    }
+    if (sub?.flashcard_id) {
+        const f = (allFlashcards || []).find((fc: any) => (fc.rowKey || fc.RowKey) === sub.flashcard_id);
+        return !!f && (f.batch_id || f.BatchId) === batchId;
+    }
+    return false;
+};
+
+/**
  * Points actually earned by a submission. Only an approved submission scores —
  * a pending or retry one is worth nothing yet, even though its task defines a
  * point value.

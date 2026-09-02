@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { UserCheck, UserX, Search, ShieldCheck, Mail, ShieldAlert, Trash2, Edit2, Check, X, Camera, UploadCloud, Award, FileText, Clock, History } from "lucide-react";
 import { useState, useEffect } from "react";
 import { getAllEntities, TABLES, upsertEntity, deleteEntity } from "@/lib/azureDb";
-import { getBatchStart, awardBelongsToBatch } from "@/lib/points";
+import { getBatchStart, awardBelongsToBatch, submissionBelongsToBatch } from "@/lib/points";
 import { uploadToAzure } from "@/lib/azureClient";
 
 export function MemberManagement({ batchId, isLocked }: { batchId?: string, isLocked?: boolean }) {
@@ -109,18 +109,9 @@ export function MemberManagement({ batchId, isLocked }: { batchId?: string, isLo
         // Scope the log to this member's CURRENT batch. Their rows in Submissions keep
         // every entry from every cohort they have ever been in, so without this the log
         // listed (and priced) tasks from a batch that already ended.
-        const memberSubs = (allSubs||[]).filter((s: any) => {
-            if (s.user_id !== mId) return false;
-            if (s.task_id) {
-                const t = (allTasks||[]).find((tk: any) => (tk.rowKey||tk.RowKey) === s.task_id);
-                return !!t && (t.batch_id || t.BatchId) === member.batch_id;
-            }
-            if (s.flashcard_id) {
-                const f = (allFlashcards||[]).find((fc: any) => (fc.rowKey||fc.RowKey) === s.flashcard_id);
-                return !!f && (f.batch_id || f.BatchId) === member.batch_id;
-            }
-            return false;
-        });
+        const memberSubs = (allSubs||[]).filter((s: any) =>
+            s.user_id === mId && submissionBelongsToBatch(s, member.batch_id, allTasks || [], allFlashcards || [])
+        );
         const memberAwards = (allAwards||[]).filter((a: any) =>
             a.user_id === mId && awardBelongsToBatch(a, member.batch_id, batchStart)
         );
