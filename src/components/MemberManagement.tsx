@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { UserCheck, UserX, Search, ShieldCheck, Mail, ShieldAlert, Trash2, Edit2, Check, X, Camera, UploadCloud, Award, FileText, Clock, History } from "lucide-react";
 import { useState, useEffect } from "react";
 import { getAllEntities, TABLES, upsertEntity, deleteEntity } from "@/lib/azureDb";
+import { getBatchStart, awardBelongsToBatch } from "@/lib/points";
 import { uploadToAzure } from "@/lib/azureClient";
 
 export function MemberManagement({ batchId, isLocked }: { batchId?: string, isLocked?: boolean }) {
@@ -42,7 +43,9 @@ export function MemberManagement({ batchId, isLocked }: { batchId?: string, isLo
             const approvedSubs = (allSubs||[]).filter((s: any) =>
                 s.user_id === uid && s.status === 'approved'
             );
-            const memberAwards = (allAwards||[]).filter((a: any) => a.user_id === uid);
+            const memberAwards = (allAwards||[]).filter((a: any) =>
+                a.user_id === uid && awardBelongsToBatch(a, p.batch_id, getBatchStart(allFlashcards || [], p.batch_id))
+            );
 
             let points = 0;
             approvedSubs.forEach((s: any) => {
@@ -103,8 +106,24 @@ export function MemberManagement({ batchId, isLocked }: { batchId?: string, isLo
             return Math.max(1, diffDays + 1);
         };
 
-        const memberSubs = (allSubs||[]).filter((s: any) => s.user_id === mId);
-        const memberAwards = (allAwards||[]).filter((a: any) => a.user_id === mId);
+        // Scope the log to this member's CURRENT batch. Their rows in Submissions keep
+        // every entry from every cohort they have ever been in, so without this the log
+        // listed (and priced) tasks from a batch that already ended.
+        const memberSubs = (allSubs||[]).filter((s: any) => {
+            if (s.user_id !== mId) return false;
+            if (s.task_id) {
+                const t = (allTasks||[]).find((tk: any) => (tk.rowKey||tk.RowKey) === s.task_id);
+                return !!t && (t.batch_id || t.BatchId) === member.batch_id;
+            }
+            if (s.flashcard_id) {
+                const f = (allFlashcards||[]).find((fc: any) => (fc.rowKey||fc.RowKey) === s.flashcard_id);
+                return !!f && (f.batch_id || f.BatchId) === member.batch_id;
+            }
+            return false;
+        });
+        const memberAwards = (allAwards||[]).filter((a: any) =>
+            a.user_id === mId && awardBelongsToBatch(a, member.batch_id, batchStart)
+        );
         const enrichedSubs = memberSubs.map((s: any) => {
             const task = (allTasks||[]).find((t: any) => (t.rowKey||t.RowKey) === s.task_id);
             const flashcard = (allFlashcards||[]).find((f: any) => (f.rowKey||f.RowKey) === s.flashcard_id);
@@ -182,6 +201,8 @@ export function MemberManagement({ batchId, isLocked }: { batchId?: string, isLo
         await upsertEntity(TABLES.MANUAL_AWARDS, {
             partitionKey: 'Award', rowKey: 'award_' + Date.now(),
             user_id: memberId, points: adjustment,
+            // Stamp the batch so this award scores only for the cohort it was granted in.
+            batch_id: member?.batch_id || batchId,
             reason: 'Admin Adjustment', day, week: Math.ceil(day / 7),
             created_at: new Date().toISOString()
         });
@@ -576,7 +597,12 @@ export function MemberManagement({ batchId, isLocked }: { batchId?: string, isLo
                                           </div>
                                           <div style={{ textAlign: 'right' }}>
                                               <div style={{ fontSize: '16px', fontWeight: '900', color: log.logType === 'submission' && log.status !== 'approved' ? 'rgba(83, 55, 43, 0.2)' : '#9f4022' }}>
-                                                  +{log.points || (log.tasks?.points || log.flashcards?.points || 0)}
+                                                  {/* A pending or retry submission has earned nothing yet. Printing the
+                                                      task's face value there read as points already banked, and never
+                                                      reconciled with the member's actual total. */}
+                                                  +{log.logType === 'award'
+                                                      ? (Number(log.points) || 0)
+                                                      : (log.status === 'approved' ? (Number(log.tasks?.points ?? log.flashcards?.points) || 0) : 0)}
                                               </div>
                                               <div style={{ fontSize: '9px', color: 'rgba(83, 55, 43, 0.4)', fontWeight: 'bold' }}>POINTS</div>
                                           </div>

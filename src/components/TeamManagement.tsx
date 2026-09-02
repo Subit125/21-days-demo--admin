@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Plus, Users, Award, Sparkles, Trash2, ShieldCheck, X, Edit2, Check, Camera } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { getAllEntities, TABLES, upsertEntity, deleteEntity } from "@/lib/azureDb";
+import { getBatchStart, awardBelongsToBatch } from "@/lib/points";
 import { uploadToAzure } from "@/lib/azureClient";
 
 interface Clan {
@@ -73,7 +74,10 @@ export function TeamManagement({ batchId, isLocked }: TeamManagementProps) {
           }
           pointMap[s.user_id] = (pointMap[s.user_id] || 0) + pts;
       });
-      (awards || []).forEach((a: any) => {
+      // Manual awards carry no Task/Flashcard link, so they need their own batch check —
+      // otherwise an award from a previous cohort still scores in this one.
+      const batchStart = getBatchStart(flashcards || [], batchId);
+      (awards || []).filter((a: any) => awardBelongsToBatch(a, batchId, batchStart)).forEach((a: any) => {
           pointMap[a.user_id] = (pointMap[a.user_id] || 0) + (Number(a.points) || 0);
       });
 

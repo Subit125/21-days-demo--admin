@@ -532,6 +532,8 @@ export function TaskManagement({ batchId, user, isLocked }: { batchId?: string, 
         const mAwardId = crypto.randomUUID(); await upsertEntity(TABLES.MANUAL_AWARDS, { partitionKey: 'Award', rowKey: mAwardId,
             user_id: awardData.userId,
             points: Number(awardData.points),
+            // Stamp the batch so this award scores only for the cohort it was granted in.
+            batch_id: batchId,
             reason: awardData.reason || 'Admin Award',
             day: activeDay,
             week: activeWeek

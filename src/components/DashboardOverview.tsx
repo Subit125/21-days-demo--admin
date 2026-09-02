@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { getAllEntities, TABLES } from "@/lib/azureDb";
+import { getBatchStart, awardBelongsToBatch } from "@/lib/points";
 
 export function DashboardOverview({ batchId }: { batchId?: string }) {
   const [batchData, setBatchData] = useState<any[]>([]);
@@ -65,7 +66,10 @@ export function DashboardOverview({ batchId }: { batchId?: string }) {
                   if (f && (f.batch_id || f.BatchId) === currentBatchId) pts += Number(f.points || f.Points || 0);
               }
           });
-          awards.filter((a: any) => a.user_id === uid).forEach((a: any) => {
+          // Manual awards carry no Task/Flashcard link, so they need their own batch check.
+          awards.filter((a: any) =>
+              a.user_id === uid && awardBelongsToBatch(a, currentBatchId, getBatchStart(allFlash, currentBatchId))
+          ).forEach((a: any) => {
               pts += Number(a.points || a.Points || 0);
           });
           return pts;

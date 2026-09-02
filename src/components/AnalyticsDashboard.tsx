@@ -17,6 +17,7 @@ import {
   Filler
 } from 'chart.js';
 import { getAllEntities, TABLES } from "@/lib/azureDb";
+import { getBatchStart, awardBelongsToBatch } from "@/lib/points";
 import { useState, useEffect } from "react";
 
 
@@ -117,7 +118,10 @@ export function AnalyticsDashboard() {
                   if (f && (f.batch_id || f.BatchId) === currentBatchId) pts += Number(f.points || f.Points || 0);
               }
           });
-          (allAwards || []).filter((a: any) => a.user_id === uid).forEach((a: any) => {
+          // Manual awards carry no Task/Flashcard link, so they need their own batch check.
+          (allAwards || []).filter((a: any) =>
+              a.user_id === uid && awardBelongsToBatch(a, currentBatchId, getBatchStart(allFlashcards || [], currentBatchId))
+          ).forEach((a: any) => {
               pts += Number(a.points || a.Points || 0);
           });
           return pts;
