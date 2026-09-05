@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, X, Clock } from "lucide-react";
+import { Check, X, Clock, RotateCw, ImageOff } from "lucide-react";
 import { useState, useEffect } from "react";
 import { getAllEntities, TABLES, upsertEntity } from "@/lib/azureDb";
 import { submissionBelongsToBatch } from "@/lib/points";
@@ -23,6 +23,28 @@ interface Submission {
   consent_to_feed?: boolean;
 }
 
+const isVideoProof = (url: string) => /\.(mp4|webm|ogg|mov)(\?|$)/i.test(url || '');
+
+/**
+ * Proofs this submission has already had replaced, newest first.
+ *
+ * A submission is one row per member per task, overwritten in place, so `file_url`
+ * only ever holds the latest photo. The client records each one it replaces in
+ * `attempt_history`, which is what lets a reviewer compare "what they sent before"
+ * against what came back. Rows written before that field existed have none.
+ */
+const getEarlierAttempts = (sub: any): { file_url: string; submitted_at?: string }[] => {
+    let history: any[] = [];
+    try {
+        const raw = sub?.attempt_history;
+        if (typeof raw === 'string' && raw.trim()) history = JSON.parse(raw);
+        else if (Array.isArray(raw)) history = raw;
+    } catch {
+        return []; // one malformed record must not break the whole panel
+    }
+    return history.filter((a) => a?.file_url).reverse();
+};
+
 export function ApprovalsQueue({ batchId }: { batchId?: string }) {
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -31,6 +53,12 @@ export function ApprovalsQueue({ batchId }: { batchId?: string }) {
   const [featuredIds, setFeaturedIds] = useState<Set<string>>(new Set());
   const [totals, setTotals] = useState({ approved: 0, retry: 0, rejected: 0 });
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  // Submissions sent back for another try. They leave the queue above the moment they
+  // are returned (it lists 'under-review' only), so without this they were countable
+  // but not viewable: staff could see that four people had been asked to redo something
+  // and had no way to see what any of them had sent, or what they had been told.
+  const [retryList, setRetryList] = useState<Submission[]>([]);
+  const [isRetryOpen, setIsRetryOpen] = useState(false);
 
   useEffect(() => {
     fetchSubmissions();
@@ -86,9 +114,16 @@ export function ApprovalsQueue({ batchId }: { batchId?: string }) {
         .filter(Boolean);
 
       const approved = subWithDetails.filter((s: any) => s.status === 'approved').length;
-      const retry = subWithDetails.filter((s: any) => s.status === 'retry').length;
+      const retryItems = subWithDetails.filter((s: any) => s.status === 'retry');
+      const retry = retryItems.length;
       const rejected = subWithDetails.filter((s: any) => s.status === 'rejected').length;
 
+      // Newest first, so whatever was just sent back is at the top of the list.
+      retryItems.sort((a: any, b: any) =>
+        new Date(b.processed_at || b.created_at || 0).getTime() -
+        new Date(a.processed_at || a.created_at || 0).getTime()
+      );
+      setRetryList(retryItems);
       setTotals({ approved, retry, rejected });
       setSubmissions(subWithDetails.filter((s: any) => s.status === 'under-review'));
       setIsLoading(false);
@@ -170,14 +205,32 @@ export function ApprovalsQueue({ batchId }: { batchId?: string }) {
     <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
       <div className="responsive-grid" style={{ marginBottom: '48px' }}>
          {[
-           { label: 'Pending Review', value: stats.pending, color: '#53372b', bg: '#f5f2e9', icon: Clock },
-           { label: 'Approved', value: stats.passed, color: '#6f8e7c', bg: 'rgba(111, 142, 124, 0.1)', icon: Check },
-           { label: 'Resubmit', value: stats.resubmit, color: '#c99d5d', bg: 'rgba(201, 157, 93, 0.1)', icon: Clock },
-           { label: 'Rejected', value: stats.rejected, color: '#d27440', bg: 'rgba(210, 116, 64, 0.1)', icon: X },
+           { label: 'Pending Review', value: stats.pending, color: '#53372b', bg: '#f5f2e9', icon: Clock, onClick: null as ((() => void) | null) },
+           { label: 'Approved', value: stats.passed, color: '#6f8e7c', bg: 'rgba(111, 142, 124, 0.1)', icon: Check, onClick: null as ((() => void) | null) },
+           // The only tile that opens anything: everything else is a plain count.
+           { label: 'Resubmit', value: stats.resubmit, color: '#c99d5d', bg: 'rgba(201, 157, 93, 0.1)', icon: RotateCw, onClick: (stats.resubmit > 0 ? () => setIsRetryOpen(true) : null) as ((() => void) | null) },
+           { label: 'Rejected', value: stats.rejected, color: '#d27440', bg: 'rgba(210, 116, 64, 0.1)', icon: X, onClick: null as ((() => void) | null) },
          ].map((stat, i) => (
-           <motion.div key={i} className="premium-card" style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+           <motion.div
+             key={i}
+             className="premium-card"
+             onClick={stat.onClick ?? undefined}
+             role={stat.onClick ? 'button' : undefined}
+             tabIndex={stat.onClick ? 0 : undefined}
+             onKeyDown={stat.onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); stat.onClick?.(); } } : undefined}
+             whileHover={stat.onClick ? { y: -3 } : undefined}
+             style={{ display: 'flex', alignItems: 'center', gap: '20px', cursor: stat.onClick ? 'pointer' : 'default' }}
+           >
               <div style={{ width: '48px', minWidth: '48px', height: '48px', borderRadius: '12px', background: stat.bg, color: stat.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><stat.icon size={20} /></div>
-              <div><p style={{ margin: 0, fontSize: '10px', color: 'rgba(83, 55, 43, 0.4)', fontWeight: 'bold' }}>{stat.label}</p><p style={{ margin: 0, fontSize: '24px', fontWeight: 'bold' }}>{stat.value}</p></div>
+              <div>
+                <p style={{ margin: 0, fontSize: '10px', color: 'rgba(83, 55, 43, 0.4)', fontWeight: 'bold' }}>{stat.label}</p>
+                <p style={{ margin: 0, fontSize: '24px', fontWeight: 'bold' }}>{stat.value}</p>
+                {stat.onClick && (
+                  <p style={{ margin: 0, fontSize: '9px', color: '#c99d5d', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    View proofs
+                  </p>
+                )}
+              </div>
            </motion.div>
          ))}
       </div>
@@ -298,6 +351,121 @@ export function ApprovalsQueue({ batchId }: { batchId?: string }) {
         </AnimatePresence>
       </div>
 
+
+      {/* Everything currently sent back, opened from the Resubmit tile. Shows the proof
+          that was returned, which task it was for, and what the member was told to fix. */}
+      <AnimatePresence>
+        {isRetryOpen && (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 9000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '40px 20px', overflowY: 'auto' }}>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsRetryOpen(false)}
+              style={{ position: 'fixed', inset: 0, background: 'rgba(23, 15, 12, 0.75)', backdropFilter: 'blur(6px)' }}
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 20 }}
+              style={{ position: 'relative', width: '100%', maxWidth: '860px', background: '#fcfaf5', borderRadius: '28px', overflow: 'hidden', boxShadow: '0 40px 80px rgba(0,0,0,0.35)' }}
+            >
+              <div style={{ padding: '28px 32px 20px', borderBottom: '1px solid rgba(83,55,43,0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '10px', fontWeight: '900', color: '#c99d5d', textTransform: 'uppercase', letterSpacing: '0.18em' }}>
+                    <RotateCw size={13} /> Sent back for another try
+                  </div>
+                  <h2 style={{ margin: '6px 0 0', fontSize: '26px', fontWeight: '900', color: '#53372b' }}>
+                    {retryList.length} awaiting resubmission
+                  </h2>
+                </div>
+                <button
+                  onClick={() => setIsRetryOpen(false)}
+                  aria-label="Close"
+                  style={{ width: '42px', height: '42px', minWidth: '42px', borderRadius: '50%', border: '1px solid rgba(83,55,43,0.12)', background: 'white', color: '#53372b', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div style={{ padding: '20px 32px 32px', display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '70vh', overflowY: 'auto' }}>
+                {retryList.length === 0 && (
+                  <p style={{ margin: 0, padding: '32px 0', textAlign: 'center', fontSize: '13px', color: 'rgba(83,55,43,0.4)' }}>
+                    Nothing is waiting to be resubmitted.
+                  </p>
+                )}
+
+                {retryList.map((sub: any) => {
+                  const earlier = getEarlierAttempts(sub);
+                  const title = sub.tasks?.title || sub.flashcards?.text || 'Submission';
+                  const day = sub.tasks?.day;
+                  return (
+                    <div key={sub.id} style={{ display: 'flex', gap: '18px', padding: '18px', background: 'white', borderRadius: '20px', border: '1px solid rgba(83,55,43,0.06)' }}>
+                      <div
+                        onClick={() => sub.file_url && !isVideoProof(sub.file_url) && setSelectedImage(sub.file_url)}
+                        style={{ width: '132px', height: '132px', minWidth: '132px', borderRadius: '14px', overflow: 'hidden', background: 'rgba(83,55,43,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: sub.file_url && !isVideoProof(sub.file_url) ? 'zoom-in' : 'default' }}
+                      >
+                        {!sub.file_url
+                          ? <div style={{ textAlign: 'center', color: 'rgba(83,55,43,0.25)' }}><ImageOff size={22} /><div style={{ fontSize: '8px', fontWeight: 'bold', marginTop: '6px', textTransform: 'uppercase' }}>No photo</div></div>
+                          : isVideoProof(sub.file_url)
+                            ? <video src={sub.file_url} controls style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            : <img src={sub.file_url} alt={`Proof for ${title}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                      </div>
+
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '15px', fontWeight: '900', color: '#53372b' }}>{title}</span>
+                          {day && (
+                            <span style={{ fontSize: '9px', fontWeight: '900', color: '#9f4022', background: 'rgba(159,64,34,0.08)', padding: '2px 8px', borderRadius: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                              Day {day}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'rgba(83,55,43,0.55)', fontWeight: '600', marginTop: '3px' }}>
+                          {sub.profiles?.name || 'Unknown member'}
+                          {sub.batch_name ? ` · ${sub.batch_name}` : ''}
+                        </div>
+
+                        <div style={{ marginTop: '10px', padding: '10px 14px', background: 'rgba(201,157,93,0.10)', borderLeft: '3px solid #c99d5d', borderRadius: '10px' }}>
+                          <div style={{ fontSize: '8px', fontWeight: '900', color: '#c99d5d', textTransform: 'uppercase', letterSpacing: '0.12em' }}>Message to member</div>
+                          <div style={{ fontSize: '12px', color: '#53372b', fontWeight: '600', marginTop: '3px', lineHeight: '1.5' }}>
+                            {sub.rejection_comment || <span style={{ color: 'rgba(83,55,43,0.4)', fontWeight: '500' }}>No message was left.</span>}
+                          </div>
+                        </div>
+
+                        {sub.processed_at && (
+                          <div style={{ fontSize: '9px', color: 'rgba(83,55,43,0.35)', marginTop: '8px' }}>
+                            Sent back {new Date(sub.processed_at).toLocaleString()}
+                          </div>
+                        )}
+
+                        {earlier.length > 0 && (
+                          <div style={{ marginTop: '10px' }}>
+                            <div style={{ fontSize: '8px', fontWeight: '900', color: 'rgba(83,55,43,0.4)', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '6px' }}>
+                              Earlier attempts
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px', overflowX: 'auto' }}>
+                              {earlier.map((a, i) => (
+                                <img
+                                  key={i}
+                                  src={a.file_url}
+                                  alt={`Earlier attempt ${earlier.length - i}`}
+                                  onClick={() => setSelectedImage(a.file_url)}
+                                  style={{ width: '52px', height: '52px', minWidth: '52px', objectFit: 'cover', borderRadius: '9px', border: '1px solid rgba(83,55,43,0.12)', cursor: 'zoom-in' }}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {selectedImage && (
