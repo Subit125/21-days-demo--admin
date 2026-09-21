@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { UserCheck, UserX, Search, ShieldCheck, Mail, ShieldAlert, Trash2, Edit2, Check, X, Camera, UploadCloud, Award, FileText, Clock, History } from "lucide-react";
+import { UserCheck, UserX, Search, ShieldCheck, Mail, ShieldAlert, Trash2, Edit2, Check, X, Camera, UploadCloud, Award, FileText, Clock, History, LogOut } from "lucide-react";
 import { useState, useEffect } from "react";
 import { getAllEntities, TABLES, upsertEntity, deleteEntity } from "@/lib/azureDb";
 import { getBatchStart, awardBelongsToBatch, submissionBelongsToBatch } from "@/lib/points";
@@ -153,6 +153,29 @@ export function MemberManagement({ batchId, isLocked }: { batchId?: string, isLo
     if (member) {
         await upsertEntity(TABLES.PROFILES, { ...member, partitionKey: 'Profile', rowKey: id, is_allowed: !currentStatus });
         fetchMembers();
+    }
+  };
+
+  /**
+   * Ends a member's sessions without touching their account. The client app compares
+   * `force_logout_at` against the timestamp its session was issued with, so every
+   * device signed in before this moment logs out on its next refresh — within seconds
+   * if the app is open, otherwise when they next open it. They can sign straight back
+   * in: the new session is issued after the stamp. Nothing else on the row is written,
+   * so a stale member list here cannot undo points, batch or team changes.
+   */
+  const signOutMember = async (id: string, name: string) => {
+    if (!confirm(`Sign ${name} out of all their devices?\n\nNothing is deleted — they can sign in again right away.`)) return;
+    try {
+      await upsertEntity(TABLES.PROFILES, {
+        partitionKey: 'Profile',
+        rowKey: id,
+        force_logout_at: new Date().toISOString(),
+      });
+      alert(`${name} will be signed out within a few seconds.`);
+      fetchMembers();
+    } catch (err: any) {
+      alert(`Sign-out failed: ${err.message}`);
     }
   };
 
@@ -402,6 +425,13 @@ export function MemberManagement({ batchId, isLocked }: { batchId?: string, isLo
                             >
                                 <FileText size={16} />
                                 <span style={{ fontSize: '10px', fontWeight: 'bold' }}>LOGS</span>
+                            </button>
+                            <button
+                                onClick={() => signOutMember(member.id, member.name)}
+                                title="Sign out of all devices (account is kept)"
+                                style={{ background: 'transparent', border: '1px solid rgba(83, 55, 43, 0.1)', color: '#53372b', padding: '10px', borderRadius: '12px', cursor: 'pointer' }}
+                            >
+                                <LogOut size={16} />
                             </button>
                             <button onClick={() => startEditing(member)} style={{ background: 'transparent', border: '1px solid rgba(83, 55, 43, 0.1)', color: '#53372b', padding: '10px', borderRadius: '12px', cursor: 'pointer' }}><Edit2 size={16} /></button>
                             <button onClick={() => deleteMember(member.id, member.name)} style={{ background: 'transparent', border: '1px solid rgba(159, 64, 34, 0.1)', color: '#9f4022', padding: '10px', borderRadius: '12px', cursor: 'pointer' }}><Trash2 size={16} /></button>
