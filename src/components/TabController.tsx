@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, X, Clock, Trophy, LayoutGrid, BarChart3, Users2, FileCheck2, Settings2, UserCog, UserPlus } from "lucide-react";
+import { Check, X, Clock, Trophy, LayoutGrid, BarChart3, Users2, FileCheck2, Settings2, UserCog, UserPlus, Images } from "lucide-react";
 import { useState, useEffect } from "react";
 import { DashboardOverview } from "@/components/DashboardOverview";
 import { TeamManagement } from "@/components/TeamManagement";
@@ -12,6 +12,7 @@ import { getAllEntities, TABLES, upsertEntity } from "@/lib/azureDb";
 
 import { ApprovalsQueue } from "@/components/ApprovalsQueue";
 import { BatchAssignment } from "@/components/BatchAssignment";
+import { PhotoExport } from "@/components/PhotoExport";
 
 // --- MAIN CONTROLLER ---
 
@@ -20,6 +21,7 @@ const tabs = [
   { id: "approvals", label: "Approvals", icon: FileCheck2 },
   { id: "members", label: "Members", icon: UserCog },
   { id: "batch-assign", label: "Batch Assign", icon: UserPlus },
+  { id: "photos", label: "Photos", icon: Images },
 ];
 
 interface TabControllerProps {
@@ -67,6 +69,7 @@ export function TabController({ user }: TabControllerProps) {
         {activeTab === "approvals" && <ApprovalsQueue />}
         {activeTab === "members" && <MemberManagement />}
         {activeTab === "batch-assign" && <BatchAssignment />}
+        {activeTab === "photos" && <PhotoExport />}
         {activeTab === "tasks" && <TaskManagement />}
         {activeTab === "analytics" && <AnalyticsDashboard />}
       </motion.div>
