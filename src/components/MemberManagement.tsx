@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { UserCheck, UserX, Search, ShieldCheck, Mail, ShieldAlert, Trash2, Edit2, Check, X, Camera, UploadCloud, Award, FileText, Clock, History, LogOut } from "lucide-react";
+import { UserCheck, UserX, Search, ShieldCheck, Mail, ShieldAlert, Trash2, Edit2, Check, X, Camera, UploadCloud, Award, FileText, Clock, History, LogOut, ArrowRightLeft } from "lucide-react";
 import { useState, useEffect } from "react";
 import { getAllEntities, TABLES, upsertEntity, deleteEntity } from "@/lib/azureDb";
 import { getBatchStart, awardBelongsToBatch, submissionBelongsToBatch } from "@/lib/points";
@@ -21,6 +21,9 @@ export function MemberManagement({ batchId, isLocked }: { batchId?: string, isLo
   const [isShowingHistory, setIsShowingHistory] = useState(false);
   const [historyLimit, setHistoryLimit] = useState(20);
   const [batchConfigs, setBatchConfigs] = useState<any[]>([]);
+  const [transferringMember, setTransferringMember] = useState<any>(null);
+  const [transferTarget, setTransferTarget] = useState('');
+  const [isTransferring, setIsTransferring] = useState(false);
 
   useEffect(() => {
     fetchMembers();
@@ -255,6 +258,47 @@ export function MemberManagement({ batchId, isLocked }: { batchId?: string, isLo
     await upsertEntity(TABLES.PROFILES, { ...member, partitionKey: 'Profile', rowKey: member.id, role: 'captain' });
     alert(`${member.name} is now the Captain of ${member.team_name}`);
     fetchMembers();
+  };
+
+  const batchName = (id: string) =>
+    batchConfigs.find((b: any) => (b.rowKey || b.RowKey) === id)?.name || id || 'No batch';
+
+  /**
+   * Moves a member to another batch. Teams belong to a batch, so they leave their
+   * team (and captaincy) and get placed into a team of the new batch from Teams.
+   * Nothing is deleted: points are counted per batch, so their old submissions and
+   * awards stay with the old batch and they start the new one at 0. Only the changed
+   * fields are written (the API merges), so a stale member list can't undo anything.
+   * The client app watches batch_id and switches the member over on its own.
+   */
+  const transferMember = async () => {
+    const member = transferringMember;
+    if (!member || !transferTarget) return;
+    const fromId = member.batch_id;
+    if (!confirm(
+      `Move ${member.name} from ${batchName(fromId)} to ${batchName(transferTarget)}?\n\n` +
+      `• They leave their current team${member.role === 'captain' ? ' and stop being captain' : ''}; add them to a team in the new batch from Teams.\n` +
+      `• Their points start at 0 in the new batch. Old submissions stay with ${batchName(fromId)} (moving them back restores those points).`
+    )) return;
+    setIsTransferring(true);
+    try {
+      await upsertEntity(TABLES.PROFILES, {
+        partitionKey: 'Profile',
+        rowKey: member.id,
+        batch_id: transferTarget,
+        team_name: '',
+        role: 'member',
+        is_allowed: true,
+        transferred_from: fromId || '',
+        transferred_at: new Date().toISOString(),
+      });
+      setTransferringMember(null);
+      alert(`${member.name} moved to ${batchName(transferTarget)}.`);
+      fetchMembers();
+    } catch (err: any) {
+      alert(`Transfer failed: ${err.message}`);
+    }
+    setIsTransferring(false);
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -502,6 +546,31 @@ export function MemberManagement({ batchId, isLocked }: { batchId?: string, isLo
                     <motion.button
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
+                      onClick={() => { setTransferTarget(''); setTransferringMember(member); }}
+                      title="Move this member to another batch"
+                      style={{ 
+                        padding: '10px 20px', 
+                        borderRadius: '12px', 
+                        border: '1px solid rgba(83, 55, 43, 0.15)', 
+                        backgroundColor: 'white',
+                        color: '#53372b',
+                        fontSize: '11px',
+                        fontWeight: '900',
+                        textTransform: 'uppercase',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.02)'
+                      }}
+                    >
+                      <ArrowRightLeft size={14} />
+                      Transfer
+                    </motion.button>
+
+                    <motion.button
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
                       onClick={() => handleAdjustPoints(member.id, member.points)}
                       style={{ 
                         padding: '10px 20px', 
@@ -655,6 +724,68 @@ export function MemberManagement({ batchId, isLocked }: { batchId?: string, isLo
                   </motion.div>
               </div>
           )}
+      </AnimatePresence>
+
+      {/* TRANSFER TO ANOTHER BATCH */}
+      <AnimatePresence>
+          {transferringMember && (() => {
+              const options = batchConfigs.filter((b: any) =>
+                  (b.rowKey || b.RowKey) !== transferringMember.batch_id && b.is_active !== false
+              );
+              return (
+                  <div
+                    style={{ position: 'fixed', inset: 0, background: 'rgba(83, 55, 43, 0.4)', backdropFilter: 'blur(8px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
+                    onClick={() => !isTransferring && setTransferringMember(null)}
+                  >
+                      <motion.div
+                        initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{ width: '100%', maxWidth: '440px', background: 'white', borderRadius: '24px', padding: '32px' }}
+                      >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                              <h3 style={{ margin: 0, fontSize: '20px', color: '#53372b', fontFamily: "'Bodoni Moda', serif" }}>Transfer Member</h3>
+                              <button onClick={() => setTransferringMember(null)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#53372b' }}><X size={20} /></button>
+                          </div>
+                          <p style={{ margin: '0 0 24px 0', fontSize: '13px', color: 'rgba(83, 55, 43, 0.6)' }}>
+                              {transferringMember.name} &middot; currently in <strong>{batchName(transferringMember.batch_id)}</strong>
+                          </p>
+
+                          {options.length === 0 ? (
+                              <p style={{ fontSize: '13px', color: '#9f4022' }}>There is no other active batch to move them to.</p>
+                          ) : (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '24px', maxHeight: '300px', overflowY: 'auto' }}>
+                                  {options.map((b: any) => {
+                                      const id = b.rowKey || b.RowKey;
+                                      const selected = transferTarget === id;
+                                      return (
+                                          <button
+                                            key={id}
+                                            onClick={() => setTransferTarget(id)}
+                                            style={{ textAlign: 'left', padding: '14px 16px', borderRadius: '12px', cursor: 'pointer', border: selected ? '2px solid #9f4022' : '1px solid rgba(83, 55, 43, 0.1)', background: selected ? 'rgba(159, 64, 34, 0.05)' : 'white' }}
+                                          >
+                                              <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#53372b' }}>{b.name || id}</div>
+                                              <div style={{ fontSize: '11px', color: 'rgba(83, 55, 43, 0.5)', marginTop: '2px' }}>
+                                                  {getBatchTotalDays(b)} days
+                                                  {b.start_date ? ` · starts ${new Date(b.start_date).toLocaleDateString()}` : ''}
+                                                  {b.is_locked ? ' · locked' : ''}
+                                              </div>
+                                          </button>
+                                      );
+                                  })}
+                              </div>
+                          )}
+
+                          <button
+                            onClick={transferMember}
+                            disabled={!transferTarget || isTransferring}
+                            style={{ width: '100%', padding: '14px', background: '#9f4022', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: !transferTarget || isTransferring ? 'not-allowed' : 'pointer', opacity: !transferTarget || isTransferring ? 0.5 : 1 }}
+                          >
+                              {isTransferring ? 'Moving...' : transferTarget ? `Move to ${batchName(transferTarget)}` : 'Choose a batch'}
+                          </button>
+                      </motion.div>
+                  </div>
+              );
+          })()}
       </AnimatePresence>
     </div>
   );
