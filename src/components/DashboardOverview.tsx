@@ -9,6 +9,7 @@ import {
 import { useEffect, useState } from "react";
 import { getAllEntities, TABLES } from "@/lib/azureDb";
 import { getBatchStart, awardBelongsToBatch, submissionBelongsToBatch } from "@/lib/points";
+import { DEFAULT_TOTAL_DAYS, getBatchTotalDays } from "@/lib/batchDays";
 
 export function DashboardOverview({ batchId }: { batchId?: string }) {
   const [batchData, setBatchData] = useState<any[]>([]);
@@ -21,6 +22,7 @@ export function DashboardOverview({ batchId }: { batchId?: string }) {
   const [stats, setStats] = useState({
     activeChallenge: 1,
     currentDay: 1,
+    totalDays: DEFAULT_TOTAL_DAYS,
     topTeam: 'Loading...',
     topClient: 'Loading...',
     activeCount: 0,
@@ -95,7 +97,7 @@ export function DashboardOverview({ batchId }: { batchId?: string }) {
                 const now = new Date();
                 const nowDateOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
                 const diff = Math.floor((nowDateOnly.getTime() - startDateOnly.getTime()) / (1000 * 60 * 60 * 24));
-                currentDay = Math.max(1, Math.min(28, diff + 1));
+                currentDay = Math.max(1, Math.min(getBatchTotalDays(batch) + 7, diff + 1));
             }
 
             const bProfilesWithPoints = bProfiles.map((p: any) => ({ ...p, points: computePoints(p.rowKey || p.RowKey, bId) }));
@@ -150,7 +152,9 @@ export function DashboardOverview({ batchId }: { batchId?: string }) {
         }).sort((a: any, b: any) => b.points - a.points);
         const topClan = clanRanked[0];
 
-        const startDay = batches.find((b: any) => (b.rowKey || b.RowKey) === batchId)?.start_date;
+        const thisBatch = batches.find((b: any) => (b.rowKey || b.RowKey) === batchId);
+        const startDay = thisBatch?.start_date;
+        const totalDays = getBatchTotalDays(thisBatch);
 
         let currentDay = 1;
         if (startDay) {
@@ -161,7 +165,7 @@ export function DashboardOverview({ batchId }: { batchId?: string }) {
             const today = new Date();
             const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
             const diff = Math.floor((todayDateOnly.getTime() - startDateOnly.getTime()) / (1000 * 60 * 60 * 24));
-            currentDay = Math.max(1, Math.min(21, diff + 1));
+            currentDay = Math.max(1, Math.min(totalDays, diff + 1));
         }
 
         const todayTasks = filteredTasks.filter((t: any) => Number(t.day) === currentDay);
@@ -181,6 +185,7 @@ export function DashboardOverview({ batchId }: { batchId?: string }) {
         setStats({
             activeChallenge: batches.filter((b: any) => !b.is_locked).length || 1,
             currentDay,
+            totalDays,
             topTeam: topClan?.name || 'TBD',
             topClient: topMember?.name || 'TBD',
             activeCount: filteredProfiles.length,
@@ -215,10 +220,10 @@ export function DashboardOverview({ batchId }: { batchId?: string }) {
                     WEEK {currentWeek} — {['Foundation', 'Intensity', 'Mastery'][currentWeek - 1]?.toUpperCase() || 'PUSH THROUGH'}
                 </h2>
                 <p style={{ fontSize: '16px', color: '#53372b', marginTop: '8px', marginBottom: '32px', fontFamily: "'Bodoni Moda', serif", fontStyle: 'italic', fontWeight: 'bold' }}>
-                    Day {stats.currentDay} of 21
+                    Day {stats.currentDay} of {stats.totalDays}
                 </p>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px' }}>
-                    {Array.from({ length: 21 }, (_, i) => i + 1).map((day) => (
+                    {Array.from({ length: stats.totalDays }, (_, i) => i + 1).map((day) => (
                         <div key={day} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', padding: '12px 4px', borderRadius: '12px', backgroundColor: day === stats.currentDay ? '#9f4022' : day < stats.currentDay ? 'rgba(159, 64, 34, 0.08)' : 'rgba(83, 55, 43, 0.03)', border: day === stats.currentDay ? 'none' : '1px solid rgba(83, 55, 43, 0.06)' }}>
                             <span style={{ fontSize: '9px', fontWeight: 'bold', color: day === stats.currentDay ? 'white' : 'rgba(83, 55, 43, 0.4)' }}>DAY {day}</span>
                             <div style={{ color: day === stats.currentDay ? 'white' : day < stats.currentDay ? '#9f4022' : 'rgba(83, 55, 43, 0.2)' }}>

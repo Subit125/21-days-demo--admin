@@ -6,6 +6,7 @@ import { useState, useEffect } from "react";
 import { getAllEntities, TABLES, upsertEntity, deleteEntity } from "@/lib/azureDb";
 import { getBatchStart, awardBelongsToBatch, submissionBelongsToBatch } from "@/lib/points";
 import { uploadToAzure } from "@/lib/azureClient";
+import { getBatchTotalDays } from "@/lib/batchDays";
 
 export function MemberManagement({ batchId, isLocked }: { batchId?: string, isLocked?: boolean }) {
   const [members, setMembers] = useState<any[]>([]);
@@ -19,6 +20,7 @@ export function MemberManagement({ batchId, isLocked }: { batchId?: string, isLo
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [isShowingHistory, setIsShowingHistory] = useState(false);
   const [historyLimit, setHistoryLimit] = useState(20);
+  const [batchConfigs, setBatchConfigs] = useState<any[]>([]);
 
   useEffect(() => {
     fetchMembers();
@@ -36,6 +38,7 @@ export function MemberManagement({ batchId, isLocked }: { batchId?: string, isLo
             getAllEntities(TABLES.FLASHCARDS),
         ]);
         const filtered = batchId ? (allProfiles||[]).filter((p: any) => p.batch_id === batchId) : (allProfiles||[]);
+        setBatchConfigs((allFlashcards||[]).filter((f: any) => f.partitionKey === 'CONFIG_BATCH' || f.PartitionKey === 'CONFIG_BATCH'));
 
         const enriched = filtered.map((p: any) => {
             const uid = p.rowKey || p.RowKey;
@@ -204,7 +207,9 @@ export function MemberManagement({ batchId, isLocked }: { batchId?: string, isLo
     if (!adjString) return;
     const adjustment = parseInt(adjString);
     if (isNaN(adjustment)) { alert("Invalid number entered."); return; }
-    const dayString = prompt("Which Day should this adjustment apply to? (1-21):", "1");
+    const memberBatchId = members.find(m => m.id === memberId)?.batch_id || batchId;
+    const totalDays = getBatchTotalDays(batchConfigs.find((b: any) => (b.rowKey || b.RowKey) === memberBatchId));
+    const dayString = prompt(`Which Day should this adjustment apply to? (1-${totalDays}):`, "1");
     if (!dayString) return;
     const day = parseInt(dayString);
     try {

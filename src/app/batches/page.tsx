@@ -4,20 +4,53 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Layers, Plus, Lock, Unlock, Calendar, LayoutDashboard, Search, RefreshCw, X, User, Power, PowerOff, Zap } from "lucide-react";
 import { getAllEntities, upsertEntity } from "@/lib/azureDb";
+import { DEFAULT_TOTAL_DAYS, DURATION_PRESETS, MAX_TOTAL_DAYS, GRACE_DAYS, getBatchTotalDays } from "@/lib/batchDays";
 import Link from "next/link";
+
+// Preset buttons (10 / 21) plus a custom number field for the challenge length.
+const DurationPicker = ({ value, onChange }: { value: number; onChange: (n: number) => void }) => (
+    <div>
+        <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', color: '#9f4022', textTransform: 'uppercase', marginBottom: '8px' }}>Challenge Length</label>
+        <div style={{ display: 'flex', gap: '8px' }}>
+            {DURATION_PRESETS.map(n => (
+                <button
+                    key={n}
+                    type="button"
+                    onClick={() => onChange(n)}
+                    style={{ flex: 1, padding: '12px', borderRadius: '12px', border: value === n ? 'none' : '1px solid #eee', background: value === n ? '#9f4022' : 'white', color: value === n ? 'white' : '#53372b', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}
+                >
+                    {n} Days
+                </button>
+            ))}
+            <input
+                type="number"
+                min={1}
+                max={MAX_TOTAL_DAYS}
+                value={value}
+                onChange={(e) => {
+                    const n = parseInt(e.target.value);
+                    if (!isNaN(n)) onChange(Math.max(1, Math.min(MAX_TOTAL_DAYS, n)));
+                }}
+                title="Custom number of days"
+                style={{ width: '80px', padding: '12px', borderRadius: '12px', border: '1px solid #eee', outline: 'none', textAlign: 'center' }}
+            />
+        </div>
+    </div>
+);
 
 export default function BatchesPage() {
     const [batches, setBatches] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isCreating, setIsCreating] = useState(false);
-    const [newBatch, setNewBatch] = useState({ name: '', start_date: new Date().toISOString().split('T')[0] });
+    const [newBatch, setNewBatch] = useState({ name: '', start_date: new Date().toISOString().split('T')[0], total_days: DEFAULT_TOTAL_DAYS });
     const [editingBatch, setEditingBatch] = useState<any>(null);
     const [editStartDate, setEditStartDate] = useState('');
+    const [editTotalDays, setEditTotalDays] = useState(DEFAULT_TOTAL_DAYS);
     const [isSavingDate, setIsSavingDate] = useState(false);
 
     // Mirrors the client's day calculation (Client dashboard/src/App.jsx):
-    // whole days between midnight-of-start and midnight-of-today, +1, clamped 1..28.
-    const dayFromStartDate = (dateStr: string) => {
+    // whole days between midnight-of-start and midnight-of-today, +1, clamped 1..(length + 7).
+    const dayFromStartDate = (dateStr: string, totalDays: number = DEFAULT_TOTAL_DAYS) => {
         if (!dateStr) return 1;
         const start = new Date(dateStr);
         if (isNaN(start.getTime())) return 1;
@@ -25,7 +58,7 @@ export default function BatchesPage() {
         const startOnly = new Date(start.getFullYear(), start.getMonth(), start.getDate());
         const nowOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         const diff = nowOnly.getTime() - startOnly.getTime();
-        return Math.max(1, Math.min(28, Math.floor(diff / (1000 * 60 * 60 * 24)) + 1));
+        return Math.max(1, Math.min(totalDays + GRACE_DAYS, Math.floor(diff / (1000 * 60 * 60 * 24)) + 1));
     };
 
     const fetchBatches = async () => {
@@ -55,6 +88,7 @@ export default function BatchesPage() {
             rowKey: id,
             name: newBatch.name,
             start_date: new Date(newBatch.start_date).toISOString(),
+            total_days: newBatch.total_days,
             is_locked: false,
             is_active: true,
             type: 'batch_config',
@@ -64,7 +98,7 @@ export default function BatchesPage() {
         try {
             await upsertEntity("Flashcards", batch);
             setIsCreating(false);
-            setNewBatch({ name: '', start_date: new Date().toISOString().split('T')[0] });
+            setNewBatch({ name: '', start_date: new Date().toISOString().split('T')[0], total_days: DEFAULT_TOTAL_DAYS });
             fetchBatches();
         } catch (err) {
             alert("Failed to create batch: " + err);
@@ -97,16 +131,19 @@ export default function BatchesPage() {
         const raw = batch.start_date || batch.StartDate || batch.startDate;
         const d = raw ? new Date(raw) : new Date();
         setEditStartDate(isNaN(d.getTime()) ? new Date().toISOString().split('T')[0] : d.toISOString().split('T')[0]);
+        setEditTotalDays(getBatchTotalDays(batch));
         setEditingBatch(batch);
     };
 
     const saveStartDate = async () => {
         if (!editingBatch || !editStartDate) return;
         const rKey = editingBatch.rowKey || editingBatch.RowKey;
-        const newDay = dayFromStartDate(editStartDate);
+        const newDay = dayFromStartDate(editStartDate, editTotalDays);
+        const oldTotal = getBatchTotalDays(editingBatch);
         const confirmMove = window.confirm(
-            `Set ${editingBatch.name}'s start date to ${new Date(editStartDate).toLocaleDateString()}?\n\n` +
-            `Members will move to Day ${newDay} of 21. Task release times recalculate from the new date. ` +
+            `Set ${editingBatch.name}'s start date to ${new Date(editStartDate).toLocaleDateString()}` +
+            (editTotalDays !== oldTotal ? ` and change the challenge from ${oldTotal} to ${editTotalDays} days` : '') + `?\n\n` +
+            `Members will move to Day ${newDay} of ${editTotalDays}. Task release times recalculate from the new date. ` +
             `Approved submissions are kept.`
         );
         if (!confirmMove) return;
@@ -117,19 +154,20 @@ export default function BatchesPage() {
                 ...editingBatch,
                 partitionKey: "CONFIG_BATCH",
                 rowKey: rKey,
-                start_date: new Date(editStartDate).toISOString()
+                start_date: new Date(editStartDate).toISOString(),
+                total_days: editTotalDays
             });
             setEditingBatch(null);
             fetchBatches();
         } catch (err) {
-            alert("Failed to update start date: " + err);
+            alert("Failed to update batch schedule: " + err);
         }
         setIsSavingDate(false);
     };
 
     const startChallenge = async (batch: any) => {
         const rKey = batch.rowKey || batch.RowKey;
-        const confirmStart = window.confirm(`Initialization Sequence: Do you want to START the 21-day challenge for ${batch.name} from TODAY?`);
+        const confirmStart = window.confirm(`Initialization Sequence: Do you want to START the ${getBatchTotalDays(batch)}-day challenge for ${batch.name} from TODAY?`);
         if (!confirmStart) return;
 
         await upsertEntity("Flashcards", {
@@ -218,7 +256,7 @@ export default function BatchesPage() {
                                     
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '32px' }}>
                                         <Calendar size={16} color="#999" />
-                                        <span style={{ fontSize: '14px', color: '#53372b', fontWeight: '500' }}>Starts: {new Date(batch.start_date).toLocaleDateString()}</span>
+                                        <span style={{ fontSize: '14px', color: '#53372b', fontWeight: '500' }}>Starts: {new Date(batch.start_date).toLocaleDateString()} &middot; {getBatchTotalDays(batch)} Days</span>
                                         <button
                                             onClick={() => openEditDate(batch)}
                                             style={{
@@ -235,7 +273,7 @@ export default function BatchesPage() {
                                                 cursor: 'pointer'
                                             }}
                                         >
-                                            Edit Date
+                                            Edit
                                         </button>
                                     </div>
 
@@ -358,7 +396,7 @@ export default function BatchesPage() {
                                                 }}
                                             >
                                                 <Zap size={14} fill="currentColor" />
-                                                Initiate 21-Day Protocol
+                                                Initiate {getBatchTotalDays(batch)}-Day Protocol
                                             </button>
                                         )}
                                         
@@ -405,7 +443,7 @@ export default function BatchesPage() {
                                     />
                                 </div>
 
-                                <div style={{ marginBottom: '32px' }}>
+                                <div style={{ marginBottom: '20px' }}>
                                     <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', color: '#9f4022', textTransform: 'uppercase', marginBottom: '8px' }}>Start Date</label>
                                     <input 
                                         type="date" 
@@ -413,6 +451,10 @@ export default function BatchesPage() {
                                         onChange={(e) => setNewBatch({...newBatch, start_date: e.target.value})}
                                         style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', outline: 'none' }} 
                                     />
+                                </div>
+
+                                <div style={{ marginBottom: '32px' }}>
+                                    <DurationPicker value={newBatch.total_days} onChange={(n) => setNewBatch({ ...newBatch, total_days: n })} />
                                 </div>
 
                                 <button 
@@ -432,7 +474,7 @@ export default function BatchesPage() {
                         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
                             <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} style={{ width: '400px', background: 'white', borderRadius: '24px', padding: '40px' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '32px' }}>
-                                    <h3 style={{ margin: 0, fontSize: '20px', color: '#53372b' }}>Edit Start Date</h3>
+                                    <h3 style={{ margin: 0, fontSize: '20px', color: '#53372b' }}>Edit Schedule</h3>
                                     <button onClick={() => setEditingBatch(null)} style={{ border: 'none', background: 'transparent', cursor: 'pointer' }}><X size={24} /></button>
                                 </div>
 
@@ -450,9 +492,13 @@ export default function BatchesPage() {
                                     />
                                 </div>
 
+                                <div style={{ marginBottom: '20px' }}>
+                                    <DurationPicker value={editTotalDays} onChange={setEditTotalDays} />
+                                </div>
+
                                 <div style={{ marginBottom: '32px', padding: '14px', background: '#fcfaf5', borderRadius: '12px', fontSize: '12px', color: '#53372b' }}>
-                                    Members will move to <strong>Day {dayFromStartDate(editStartDate)}</strong> of 21.
-                                    {dayFromStartDate(editStartDate) === 1 && ' The challenge restarts from the beginning.'}
+                                    Members will move to <strong>Day {dayFromStartDate(editStartDate, editTotalDays)}</strong> of {editTotalDays}.
+                                    {dayFromStartDate(editStartDate, editTotalDays) === 1 && ' The challenge restarts from the beginning.'}
                                 </div>
 
                                 <button
@@ -460,7 +506,7 @@ export default function BatchesPage() {
                                     disabled={isSavingDate || !editStartDate}
                                     style={{ width: '100%', padding: '16px', background: '#9f4022', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: isSavingDate ? 'not-allowed' : 'pointer', opacity: isSavingDate ? 0.6 : 1 }}
                                 >
-                                    {isSavingDate ? 'Saving...' : 'Save Start Date'}
+                                    {isSavingDate ? 'Saving...' : 'Save Schedule'}
                                 </button>
                             </motion.div>
                         </div>

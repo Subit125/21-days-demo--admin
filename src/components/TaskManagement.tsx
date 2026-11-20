@@ -6,6 +6,7 @@ import { useState, useEffect } from "react";
 import { getAllEntities, TABLES, upsertEntity, deleteEntity } from "@/lib/azureDb";
 import { uploadToAzure as uploadFile } from "@/lib/azureClient";
 import imageCompression from 'browser-image-compression';
+import { DEFAULT_TOTAL_DAYS, getBatchTotalDays } from "@/lib/batchDays";
 
 const protocolTemplates = [
   { title: "Mindful Morning Flow", points: 15, proof: "video" },
@@ -35,6 +36,8 @@ export function TaskManagement({ batchId, user, isLocked }: { batchId?: string, 
   const [submissions, setSubmissions] = useState<any[]>([]);
   const [profiles, setProfiles] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  // Challenge length of this batch (admin sets it on Batch Operations); 21 when unset.
+  const [totalDays, setTotalDays] = useState(DEFAULT_TOTAL_DAYS);
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
   const [isBatchActionModalOpen, setIsBatchActionModalOpen] = useState(false);
   const [batchActionType, setBatchActionType] = useState<'copy' | 'move'>('copy');
@@ -145,6 +148,14 @@ export function TaskManagement({ batchId, user, isLocked }: { batchId?: string, 
           return true;
         })
         .map((f: any) => ({ ...f, id: f.rowKey || f.RowKey }));
+
+      if (batchId) {
+        const batchConfig = (allFlashcards || []).find((f: any) =>
+          (f.partitionKey === 'CONFIG_BATCH' || f.PartitionKey === 'CONFIG_BATCH') &&
+          (f.rowKey === batchId || f.RowKey === batchId)
+        );
+        setTotalDays(getBatchTotalDays(batchConfig));
+      }
 
       setTasks(filteredTasks);
       setFlashCards(filteredCards);
@@ -1079,7 +1090,7 @@ export function TaskManagement({ batchId, user, isLocked }: { batchId?: string, 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <p style={{ fontSize: '9px', fontWeight: 'bold', color: 'rgba(83, 55, 43, 0.4)', textTransform: 'uppercase', letterSpacing: '0.2em' }}>Jump to specific day in protocol</p>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(11, 1fr)', gap: '8px' }}>
-                {Array.from({ length: 21 }, (_, i) => i + 1).map(day => (
+                {Array.from({ length: totalDays }, (_, i) => i + 1).map(day => (
                     <button
                         key={day}
                         onClick={() => {
@@ -1451,7 +1462,7 @@ export function TaskManagement({ batchId, user, isLocked }: { batchId?: string, 
                   <button 
                     onClick={() => { 
                       setBatchActionType('copy'); 
-                      setTargetDay(Math.min(21, activeDay + 1));
+                      setTargetDay(Math.min(totalDays, activeDay + 1));
                       setIsBatchActionModalOpen(true); 
                     }}
                     style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', padding: '10px 20px', borderRadius: '12px', fontSize: '11px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' }}
@@ -1461,7 +1472,7 @@ export function TaskManagement({ batchId, user, isLocked }: { batchId?: string, 
                   <button 
                     onClick={() => { 
                       setBatchActionType('move'); 
-                      setTargetDay(Math.min(21, activeDay + 1));
+                      setTargetDay(Math.min(totalDays, activeDay + 1));
                       setIsBatchActionModalOpen(true); 
                     }}
                     style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', padding: '10px 20px', borderRadius: '12px', fontSize: '11px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' }}
@@ -1530,7 +1541,7 @@ export function TaskManagement({ batchId, user, isLocked }: { batchId?: string, 
                   </p>
                   
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px', marginBottom: '40px' }}>
-                    {Array.from({ length: 21 }, (_, i) => i + 1).map(day => (
+                    {Array.from({ length: totalDays }, (_, i) => i + 1).map(day => (
                       <button
                         key={day}
                         onClick={() => setTargetDay(day)}
